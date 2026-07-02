@@ -20,16 +20,30 @@ Control the pump speed of **NZXT Kraken** AIO coolers, the Kraken fan channel an
 
 | Channel | Control |
 |---------|---------|
-| **Kraken pump** | Speed curve over HID. Always driven (no Auto), 20 % safety floor, 100 % forced at the top of the curve. |
+| **Kraken pump** | Speed curve over HID. Always driven, 20 % safety floor. |
 | **Kraken fan channel** | Speed curve over HID for the fans plugged into the pump head (Z-series / 2023 / Elite). |
-| **Motherboard fans** | Every controllable header exposed by the Super I/O chip (via LibreHardwareMonitor). `Auto` hands the channel back to the BIOS. |
+| **Motherboard fans** | Every controllable header exposed by the Super I/O chip (via LibreHardwareMonitor). All channels are returned to **BIOS control when the plugin unloads**. |
 
-### Curve editor
+Empty fan headers (duty commanded but 0 RPM for 15 s) are **hidden automatically**, remembered across restarts, and re-appear the moment a tachometer signal shows up (hot-plugged fan).
 
-- Free-form points on a 0–100 °C axis: **left-click** to add, **right-click** to remove, drag points on both axes.
-- Drag guides show the exact **%** and **°** while moving a point; editing a preset curve switches to *Custom* automatically.
-- Live temperature cursor for the selected source.
-- Presets per channel: **Silent / Normal / Performance / Custom** (+ **Auto** for motherboard fans).
+### Modes & curve editor
+
+- Modes per channel: **Silent / Performance / Fixed / Custom** (default Silent).
+  **Fixed** = constant duty, drawn as two linked points (0° and 100°) that move together — adjusting them stays in Fixed; adding a point switches to Custom.
+- Free-form points on a 0–100 °C axis: **left-click** to add, **right-click** to remove, drag on both axes.
+- Temperature (X) is blocked by neighboring points; duty (%) **pushes** the points it crosses — and while the mouse button is held, pushed points spring back toward their original value if you move back. Editing a preset switches to *Custom* automatically.
+- Drag guides show the exact **%** and **°** of the moving point; live temperature cursor for the selected source.
+- Per-channel **Step up / Step down** limits (%/s): immediate or gradual speed changes, typed directly.
+- **Reset** restores the channel defaults; **Apply** copies the current curve, mode and ramps to any other fans (scrollable picker).
+- **Identify**: click a fan's icon — the fan spins at 100 % for 5 s while the icon's blades animate.
+- Rename any channel (pump included) with a single click on its name.
+
+### Smart control loop
+
+- 1 Hz software loop, temperature smoothed (EMA, ~5 s) with a ±1 % deadband — no duty oscillation when a sensor jitters around a curve point.
+- Rise/fall rates capped per channel by the Step settings; a fan stopped at 0 % gets a **30 % spin-up kick** and won't wake below 5 % (Zero-RPM hysteresis).
+- Handles the Elite V2 firmware quirk where the pump occasionally resets itself to 0 %: the reported duty is checked every second and the command is re-sent on mismatch.
+- A dead sensor (0 °C reading, stale liquid value after disconnect) never drives a fan.
 
 ### Temperature sources (per channel)
 
@@ -37,10 +51,8 @@ Liquid (coolant) · GPU Average · GPU Hot Spot · CPU Average · CPU Hot Spot �
 
 ### General
 
-- Channels grouped per hardware (Kraken, motherboard) with a collapsible curve per channel — click anywhere on a row to expand, **double-click a name to rename it**.
+- Channels grouped per hardware (Kraken, motherboard) with a collapsible panel per channel — click anywhere on a row to expand.
 - Live RPM and duty (%) for every channel, including the pump.
-- Software curve loop at 1 Hz — writes only when the computed duty changes; motherboard channels are **returned to BIOS control** on exit or when set to Auto.
-- Handles the Elite V2 firmware quirk where the pump occasionally resets itself to 0 %: the reported duty is checked every second and the command is re-sent on mismatch.
 - °C / °F follows the OpenRGB locale setting.
 - Settings stored in `%APPDATA%\OpenRGB\NZXTKrakenPump`.
 
@@ -143,6 +155,7 @@ Output: `build/NZXTKrakenPumpPlugin.dll`.
 | No motherboard fans listed | `lhwm-wrapper.dll` missing or outdated (use the one from [LeProta/lhwm-wrapper](https://github.com/LeProta/lhwm-wrapper/releases)); OpenRGB not running as Administrator; or *Memory Integrity (HVCI)* / the *Vulnerable Driver Blocklist* is blocking the sensor driver. |
 | Fan/pump % does not change | Close **NZXT CAM** (it keeps re-applying its own curves and fights the plugin). |
 | CPU temperature source shows 0 | Close NZXT CAM / HWiNFO / Ryzen Master; run OpenRGB as Administrator. |
+| A fan channel disappeared from the list | It was detected as an **empty header** (duty commanded, 0 RPM for 15 s) and hidden. Plug a fan in — it re-appears as soon as a tachometer signal is seen. |
 | Fans revert to BIOS behaviour after closing OpenRGB | By design — motherboard channels are handed back to the BIOS on exit. |
 
 Logs are written next to OpenRGB's own log files (`NZXTKrakenPump_<timestamp>.log`), and make sure you have enabled logs in the OpenRGB settings for the logs to appear.
@@ -152,8 +165,9 @@ Logs are written next to OpenRGB's own log files (`NZXTKrakenPump_<timestamp>.lo
 ## How it works
 
 - **Kraken channels.** HID command `0x72` with a duty-per-°C table. Two protocol variants: X3/Z3 use 40 duties (20–59 °C), Kraken 2023 / Elite / Elite V2 use different per-channel headers with 60 duties (0–59 °C). The plugin writes a *flat* table recomputed by a 1 Hz software loop, so any temperature source can drive the pump — not just the liquid sensor.
-- **Status.** `0x74 0x01` request → liquid temperature, pump/fan RPM and reported duty. The reported duty is compared to the expected value every tick and the command is re-sent on mismatch (Elite V2 self-reset quirk).
-- **Motherboard fans.** LibreHardwareMonitor through a C++/CLI bridge (`lhwm-wrapper.dll`); every touched channel is released with `Control.SetDefault()` (BIOS) on exit or when set to Auto.
+- **Control loop.** Per tick: temperature read once per source (cached), smoothed by EMA, interpolated on the curve, then rate-limited (Step up/down), with Zero-RPM hysteresis and a spin-up kick for stopped fans. Writes only happen when the duty actually changes (±1 % deadband).
+- **Status.** `0x74 0x01` request → liquid temperature, pump/fan RPM and reported duty. The reported duty is compared to the expected value every tick and the command is re-sent on mismatch (Elite V2 self-reset quirk) without disturbing the ramp state.
+- **Motherboard fans.** LibreHardwareMonitor through a C++/CLI bridge (`lhwm-wrapper.dll`); every touched channel is released with `Control.SetDefault()` (BIOS) when the plugin unloads.
 - **Coexistence.** Runs alongside the [NZXT Kraken LCD plugin](https://github.com/LeProta/NZXTKrakenLCDPlugin) on the same cooler: each plugin opens its own HID handle, Windows duplicates input reports to every handle and serializes writes.
 
 ---
