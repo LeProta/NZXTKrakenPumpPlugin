@@ -78,9 +78,9 @@ Download the prebuilt **`NZXTKrakenPumpPlugin.dll`** from the [Releases](https:/
 
 Motherboard fans and CPU/GPU temperature sources are read through [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) via this bridge DLL.
 
-**Download `lhwm-wrapper.dll` from this repo's [Releases](https://github.com/LeProta/NZXTKrakenPumpPlugin/releases)** and place it in the **same folder as `OpenRGB.exe`**.
+**Download `lhwm-wrapper.dll` from [LeProta/lhwm-wrapper](https://github.com/LeProta/lhwm-wrapper/releases)** and place it in the **same folder as `OpenRGB.exe`**.
 
-> ⚠️ Use the copy from this repo's Releases — it is a custom build (LibreHardwareMonitor 0.9.4 + the *return control to BIOS* API). The older copy shipped with the OpenRGB Hardware Sync plugin will not expose motherboard fans. It is fully backward-compatible, including with the [NZXT Kraken LCD plugin](https://github.com/LeProta/NZXTKrakenLCDPlugin).
+> ⚠️ Use that build — it ships LibreHardwareMonitor 0.9.4 plus the *return control to BIOS* API this plugin needs. The older copy distributed with the OpenRGB Hardware Sync plugin will not expose motherboard fans. It is fully backward-compatible, including with the [NZXT Kraken LCD plugin](https://github.com/LeProta/NZXTKrakenLCDPlugin).
 
 Without `lhwm-wrapper.dll` the plugin still loads and controls the Kraken pump/fan — only the motherboard channels and system temperature sources disappear.
 
@@ -140,7 +140,7 @@ Output: `build/NZXTKrakenPumpPlugin.dll`.
 | Symptom | Fix |
 |---------|-----|
 | No **NZXT Kraken Pump** tab / *"Cannot load the plugin"* | Wrong or corrupted DLL — re-download from Releases. |
-| No motherboard fans listed | `lhwm-wrapper.dll` missing or outdated (use the one from this repo's Releases); OpenRGB not running as Administrator; or *Memory Integrity (HVCI)* / the *Vulnerable Driver Blocklist* is blocking the sensor driver. |
+| No motherboard fans listed | `lhwm-wrapper.dll` missing or outdated (use the one from [LeProta/lhwm-wrapper](https://github.com/LeProta/lhwm-wrapper/releases)); OpenRGB not running as Administrator; or *Memory Integrity (HVCI)* / the *Vulnerable Driver Blocklist* is blocking the sensor driver. |
 | Fan/pump % does not change | Close **NZXT CAM** (it keeps re-applying its own curves and fights the plugin). |
 | CPU temperature source shows 0 | Close NZXT CAM / HWiNFO / Ryzen Master; run OpenRGB as Administrator. |
 | Fans revert to BIOS behaviour after closing OpenRGB | By design — motherboard channels are handed back to the BIOS on exit. |
@@ -163,13 +163,14 @@ Logs are written next to OpenRGB's own log files (`NZXTKrakenPump_<timestamp>.lo
 - [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) — host application and plugin SDK.
 - [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) — sensor/fan backend and the Kraken `0x72` protocol reference (MPL-2.0).
 - [liquidctl](https://github.com/liquidctl/liquidctl) — Kraken protocol research.
-- `lhwm-cpp-wrapper` — C++/CLI wrapper over LibreHardwareMonitor.
+- [lhwm-wrapper](https://github.com/LeProta/lhwm-wrapper) — C++/CLI bridge over LibreHardwareMonitor.
 
 ---
 
 ## Related
 
 - [NZXT Kraken LCD plugin](https://github.com/LeProta/NZXTKrakenLCDPlugin) — drives the LCD screen of the same coolers.
+- [lhwm-wrapper](https://github.com/LeProta/lhwm-wrapper) — the sensor/fan bridge DLL used by both plugins.
 
 ---
 
