@@ -198,7 +198,7 @@ void installKrakenPumpLogger(const QString& hidVer)
     g_prevHandler = qInstallMessageHandler(krakenPumpMessageHandler);
 
     // Entete, meme forme qu'OpenRGB (lignes indentees + separateur de 100 '=')
-    writeRaw(QStringLiteral("    NZXT Kraken Pump plugin v1.0.0"));
+    writeRaw(QStringLiteral("    NZXT Kraken Pump plugin v1.0.1"));
     writeRaw(QStringLiteral("    hidapi %1 | Qt %2").arg(hidVer, QString::fromLatin1(qVersion())));
     writeRaw(QStringLiteral("    OpenRGB config: %1").arg(cfgDir));
     writeRaw(QStringLiteral("    Log settings: file=%1  console=%2  loglevel=%3")
