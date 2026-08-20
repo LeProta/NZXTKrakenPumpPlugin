@@ -4,8 +4,41 @@
 #include <QFileInfo>
 #include <QDebug>
 #include <algorithm>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace NZXTKrakenPump {
+
+// --- Epinglage des UMD graphiques (identique au plugin LCD) -----------------
+//   LHM (AmdGpu/ADL, compteurs PDH "GPU Engine") charge le user-mode driver du
+//   pilote puis le laisse se decharger ; le poll suivant rappelle dedans ->
+//   0xC0000005 dans "<UMD>.DLL_unloaded" (cf. AMDXN64.DLL). GET_MODULE_HANDLE_EX_FLAG_PIN
+//   incremente definitivement le refcount : le module ne sera plus libere.
+//   Idempotent, sans effet si le module n'est pas (encore) charge, d'ou l'appel
+//   a chaque lecture tant qu'il en reste a epingler.
+#ifdef _WIN32
+static void pinGpuDriverModules()
+{
+    // ponytail: liste fixe des UMD connus ; ajouter le nom du module si un
+    // autre pilote presente le meme crash "*_unloaded".
+    static const wchar_t* kModules[] = {
+        L"amdxn64.dll", L"amdxx64.dll", L"atiadlxx.dll", L"aticfx64.dll",
+        L"nvoglv64.dll", L"nvapi64.dll", L"igd10iumd64.dll",
+        L"d3d9.dll", L"d3d11.dll", L"dxgi.dll",
+    };
+    static bool pinned[sizeof(kModules) / sizeof(kModules[0])] = {};
+
+    for (size_t i = 0; i < sizeof(kModules) / sizeof(kModules[0]); ++i) {
+        if (pinned[i]) continue;
+        HMODULE h = nullptr;
+        if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN, kModules[i], &h))
+            pinned[i] = true;   // charge et desormais epingle
+    }
+}
+#else
+static void pinGpuDriverModules() {}
+#endif
 
 bool LhwmFans::init()
 {
@@ -31,6 +64,7 @@ bool LhwmFans::init()
     std::map<std::string, std::vector<std::tuple<std::string, std::string, std::string>>> map;
     try {
         map = LHWM::GetHardwareSensorMap();
+        pinGpuDriverModules();
     } catch (...) {
         qWarning() << "[KrakenPump/Sensors] LHWM::GetHardwareSensorMap threw an "
                       "exception (lhwm-wrapper.dll present but .NET/driver failing?).";
@@ -166,6 +200,7 @@ bool LhwmFans::init()
 float LhwmFans::value(const QString& id) const
 {
     if (!m_ready || id.isEmpty()) return 0.f;
+    pinGpuDriverModules();
     try { return LHWM::GetSensorValue(id.toStdString()); }
     catch (...) { return 0.f; }
 }
