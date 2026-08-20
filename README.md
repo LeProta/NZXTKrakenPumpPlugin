@@ -1,4 +1,4 @@
-# NZXT Kraken Pump — OpenRGB Plugin
+# NZXT Kraken Pump - OpenRGB Plugin
 
 _OpenRGB plugin for Pump & fan curve control for NZXT Kraken coolers and motherboard fans._
 
