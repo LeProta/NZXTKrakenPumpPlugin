@@ -1,6 +1,6 @@
-# NZXT Kraken Pump - OpenRGB Plugin
+# NZXT Kraken Pump — OpenRGB Plugin
 
-_OpenRGB plugin for Pump & fan curve control for NZXT Kraken coolers and motherboard fans._
+_Pump & fan curve control for NZXT Kraken coolers and motherboard fans._
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20(x64)-0078D6)
 ![Qt](https://img.shields.io/badge/Qt-5.15-41CD52)
@@ -111,7 +111,7 @@ Required for motherboard fan control and CPU temperatures (ring-0 sensor driver)
 |------|---------|
 | Visual Studio Build Tools | 2019 / 2022 — *Desktop development with C++* + *.NET Framework 4.x SDK* |
 | Qt | 5.15.2 `msvc2019_64` |
-| vcpkg | latest — provides `hidapi` (`x64-windows`) |
+| vcpkg | *optional* — only if you prefer a system `hidapi` over the bundled import library |
 | CMake | ≥ 3.16 |
 
 ### Steps
@@ -130,7 +130,9 @@ cmake --build build
 
 Output: `build/NZXTKrakenPumpPlugin.dll`.
 
-> If `hidapi` is not found automatically, pass the vcpkg toolchain:
+> `hidapi` is resolved in this order: `pkg-config`, then `find_library`, then the
+> import library bundled under `third_party/`. No vcpkg install is required.
+> To use your own build instead, pass the vcpkg toolchain:
 > `-DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake`
 
 > The build is forced to Release — `lhwm-cpp-wrapper.lib` is compiled with `/MD` and mixing runtimes causes `LNK2038`.
@@ -145,6 +147,7 @@ Output: `build/NZXTKrakenPumpPlugin.dll`.
 | No motherboard fans listed | `lhwm-wrapper.dll` missing or outdated (use the one from [LeProta/lhwm-wrapper](https://github.com/LeProta/lhwm-wrapper/releases)); OpenRGB not running as Administrator; or *Memory Integrity (HVCI)* / the *Vulnerable Driver Blocklist* is blocking the sensor driver. |
 | Fan/pump % does not change | Close **NZXT CAM** (it keeps re-applying its own curves and fights the plugin). |
 | CPU temperature source shows 0 | Close NZXT CAM / HWiNFO / Ryzen Master; run OpenRGB as Administrator. |
+| OpenRGB dies a few seconds after startup, `0xC0000005` in `*_unloaded` | Fixed in 1.0.5 — update the plugin. The graphics driver was unloading its user-mode DLL under a sensor poll in flight. |
 | A fan channel disappeared from the list | It was detected as an **empty header** (duty commanded, 0 RPM for 15 s) and hidden. Plug a fan in — it re-appears as soon as a tachometer signal is seen. |
 | Fans revert to BIOS behaviour after closing OpenRGB | By design — motherboard channels are handed back to the BIOS on exit. |
 
