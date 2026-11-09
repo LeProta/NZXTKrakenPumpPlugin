@@ -33,6 +33,19 @@ static inline bool tempValid(float t) { return t > 0.f && t < 150.f; }
 // BIOS + alerte UI. Marge pour l'init lente du driver LHM au démarrage.
 static constexpr int kFaultTicks = 8;
 
+// Table liquide -> duty écrite au Kraken : plate au duty demandé, sauf à partir
+// de kLiquidSafetyC où le firmware applique 100 %. Le firmware conserve la table
+// après fermeture ou crash d'OpenRGB : sans cette garde, pompe et ventilos du
+// Kraken resteraient figés au dernier duty quelle que soit la température.
+static constexpr int kLiquidSafetyC = 50;
+static std::array<uint8_t, 60> krakenTable(int duty)
+{
+    std::array<uint8_t, 60> t{};
+    for (int c = 0; c < 60; ++c)
+        t[c] = static_cast<uint8_t>(c >= kLiquidSafetyC ? 100 : duty);
+    return t;
+}
+
 // Calibration : balayage descendant 100 % -> 0 % par paliers de 10,
 // échantillonnage quand les RPM se sont STABILISÉS (le ventilo du Kraken suit
 // une rampe interne lente — une durée fixe le mesurait en pleine
@@ -320,17 +333,19 @@ void PumpWorker::fanTick()
     auto writeDuty = [this](const QString& id, int duty) -> bool {
         if (id == KRAKEN_FAN_ID) {
             if (!m_krakenHasFan || !m_device->isOpen()) return false;
-            std::array<uint8_t, 60> flat{};
-            flat.fill(static_cast<uint8_t>(duty));
-            if (!m_device->setCurve(Channel::Fan, flat)) return false;
+            if (!m_device->setCurve(Channel::Fan, krakenTable(duty))) return false;
         } else if (id == KRAKEN_PUMP_ID) {
             if (!m_device->isOpen()) return false;
-            std::array<uint8_t, 60> flat{};
-            flat.fill(static_cast<uint8_t>(duty));
-            if (!m_device->setCurve(Channel::Pump, flat)) return false;
+            if (!m_device->setCurve(Channel::Pump, krakenTable(duty))) return false;
         } else {
-            m_lhwm.setDuty(id, duty);
-            m_managed.insert(id);
+            m_managed.insert(id);   // rendu au BIOS au stop, même si l'écriture échoue
+            if (!m_lhwm.setDuty(id, duty)) {
+                // m_lastDuty inchangé : nouvelle tentative au tick suivant
+                static int s_err = 0;
+                if (s_err++ < 5)
+                    qWarning() << "[KrakenPump/Fans] setDuty failed:" << id << duty;
+                return false;
+            }
         }
         m_lastDuty[id] = duty;
         m_forceWrite.remove(id);
@@ -427,6 +442,8 @@ void PumpWorker::fanTick()
     const auto faultReason = [this](const QString& sid) -> QString {
         if (sid.isEmpty())
             return QStringLiteral("No temperature source selected.");
+        if (sid == QLatin1String("liquid"))
+            return QStringLiteral("Kraken not connected — liquid temperature unavailable.");
         if (sid.startsWith(QLatin1String("/gpu"))
                 || sid.contains(QLatin1String("GPU")))
             return QStringLiteral("GPU sensors unavailable — GPU driver not "
@@ -457,18 +474,17 @@ void PumpWorker::fanTick()
                                                           : sourceTemp(cfg.sourceId);
         if (!tempValid(raw)) {
             m_smoothTemp.remove(id);
-            // "liquid" exclu : connectivité device signalée via statusText.
-            if (cfg.sourceId != QLatin1String("liquid")) {
-                const int n = m_srcBadStreak.value(id, 0) + 1;
-                m_srcBadStreak.insert(id, n);
-                if (n >= kFaultTicks) {
-                    faultIds << id;
-                    faultReasons << faultReason(cfg.sourceId);
-                    if (m_managed.remove(id)) {   // rendre au BIOS une seule fois
-                        m_lhwm.setDefault(id);
-                        m_lastDuty.remove(id);
-                        m_forceWrite.remove(id);
-                    }
+            // "liquid" inclus : Kraken perdu = sonde liquide absente ; un
+            // ventilo carte mère piloté sur le liquide doit revenir au BIOS.
+            const int n = m_srcBadStreak.value(id, 0) + 1;
+            m_srcBadStreak.insert(id, n);
+            if (n >= kFaultTicks) {
+                faultIds << id;
+                faultReasons << faultReason(cfg.sourceId);
+                if (m_managed.remove(id)) {   // rendre au BIOS une seule fois
+                    m_lhwm.setDefault(id);
+                    m_lastDuty.remove(id);
+                    m_forceWrite.remove(id);
                 }
             }
             continue;
@@ -621,11 +637,16 @@ void PumpWorker::tick()
             // qui sert aussi de base aux rampes et au zero-RPM (l'effacer
             // faisait sauter la limitation de pente sur un simple retard de
             // rapport du device).
+            // Liquide >= kLiquidSafetyC : la table impose 100 % (pas une dérive).
+            const bool hot = r.liquidTemp >= kLiquidSafetyC;
+            const auto expected = [&](const QString& id) {
+                return hot ? 100 : m_lastDuty.value(id);
+            };
             if (m_lastDuty.contains(KRAKEN_PUMP_ID)
-                    && r.pumpDuty != m_lastDuty.value(KRAKEN_PUMP_ID))
+                    && r.pumpDuty != expected(KRAKEN_PUMP_ID))
                 m_forceWrite.insert(KRAKEN_PUMP_ID);
             if (m_lastDuty.contains(KRAKEN_FAN_ID)
-                    && r.fanDuty != m_lastDuty.value(KRAKEN_FAN_ID))
+                    && r.fanDuty != expected(KRAKEN_FAN_ID))
                 m_forceWrite.insert(KRAKEN_FAN_ID);
         } else if (++m_failCount >= 3) {
             // Device décroché (déconnexion, veille…) : fermer et re-sonder

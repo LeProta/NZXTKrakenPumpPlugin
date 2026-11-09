@@ -205,13 +205,16 @@ float LhwmFans::value(const QString& id) const
     catch (...) { return 0.f; }
 }
 
-void LhwmFans::setDuty(const QString& id, int percent)
+bool LhwmFans::setDuty(const QString& id, int percent)
 {
-    if (!m_ready || id.isEmpty()) return;
+    if (!m_ready || id.isEmpty()) return false;
     try {
         LHWM::SetControlValue(id.toStdString(),
                               float(std::clamp(percent, 0, 100)));
-    } catch (...) {}
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 
 void LhwmFans::setDefault(const QString& id)

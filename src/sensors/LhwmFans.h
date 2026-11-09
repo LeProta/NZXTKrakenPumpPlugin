@@ -36,7 +36,7 @@ public:
     const QVector<LhwmTemp>&    temps()    const { return m_temps; }
 
     float value(const QString& id) const;          // lecture capteur (temp/RPM/duty)
-    void  setDuty(const QString& id, int percent); // écriture duty 0..100
+    bool  setDuty(const QString& id, int percent); // écriture duty 0..100 ; false si échec
     void  setDefault(const QString& id);           // rend la main au BIOS/auto
 
 private:
