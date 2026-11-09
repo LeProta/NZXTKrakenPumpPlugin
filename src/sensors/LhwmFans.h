@@ -1,6 +1,8 @@
 #pragma once
 #include <QString>
 #include <QVector>
+#include "AdlxFan.h"
+#include "NvmlFan.h"
 
 namespace NZXTKrakenPump {
 
@@ -32,6 +34,10 @@ public:
     bool init();
     bool ready() const { return m_ready; }
 
+    // Canaux LHM seuls (hors GPU AMD/ADLX et NVIDIA/NVML) : base du retry d'init au boot — les
+    // canaux GPU, toujours présents, ne doivent pas l'arrêter.
+    int lhwmChannelCount() const { return m_lhwmChannels; }
+
     const QVector<LhwmChannel>& channels() const { return m_channels; }
     const QVector<LhwmTemp>&    temps()    const { return m_temps; }
 
@@ -40,9 +46,14 @@ public:
     void  setDefault(const QString& id);           // rend la main au BIOS/auto
 
 private:
+    bool initLhwm();                 // énumération LibreHardwareMonitor seule
+
     QVector<LhwmChannel> m_channels;
     QVector<LhwmTemp>    m_temps;
     bool                 m_ready = false;
+    int                  m_lhwmChannels = 0;
+    mutable NvmlFan      m_nvml;     // GPU NVIDIA via NVML (ids "nvml/…")
+    mutable AdlxFan      m_adlx;     // GPU AMD via ADLX (ids "adlx/…")
 };
 
 } // namespace NZXTKrakenPump

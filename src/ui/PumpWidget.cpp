@@ -127,8 +127,6 @@ static QPixmap makeChannelIcon(int type, bool dark, qreal angle = 0.0,
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing);
 
-    const QColor bg     = dark ? QColor(0x1F, 0x1F, 0x23) : QColor(0xEB, 0xEB, 0xEE);
-    const QColor border = dark ? QColor(0x2A, 0x2A, 0x2E) : QColor(0xD0, 0xD0, 0xD4);
     const QColor fg     = fgOverride.isValid() ? fgOverride
                         : dark ? QColor(0xE6, 0xE6, 0xEA) : QColor(0x2A, 0x2A, 0x2E);
 
@@ -161,21 +159,32 @@ static QPixmap makeChannelIcon(int type, bool dark, qreal angle = 0.0,
         drawScrews();
         break;
     }
-    case 2: {   // GPU : silhouette de carte (corps + connecteur PCIe + ventilateur)
-        p.setBrush(bg);
-        p.setPen(QPen(border, 1));
-        p.drawRoundedRect(QRectF(0.5, 0.5, 27, 27), 5, 5);
+    case 2: {   // GPU : puce (die évidé + 4 broches par côté), même cadre plein que
+                // pompe/ventilo. Statique : pas d'Identify sur la GPU (comme la pompe).
+        QPainterPath frame;
+        frame.setFillRule(Qt::OddEvenFill);
+        frame.addRoundedRect(QRectF(1, 1, 26, 26), 5, 5);
+        frame.addRoundedRect(QRectF(5.0, 5.0, 18.0, 18.0), 2.6, 2.6);
         p.setPen(Qt::NoPen);
+        p.fillPath(frame, fg);
         p.setBrush(fg);
-        p.drawRoundedRect(QRectF(5, 9, 18, 8.5), 1.5, 1.5);   // corps
-        p.drawRect(QRectF(7, 17.5, 8, 2.2));                  // connecteur PCIe
-        p.setBrush(bg);                                       // ouïe du ventilateur
-        p.drawEllipse(QPointF(17.5, 13.2), 2.9, 2.9);
-        p.setBrush(fg);
-        p.drawEllipse(QPointF(17.5, 13.2), 1.0, 1.0);         // moyeu
+        p.drawRoundedRect(QRectF(8.6, 8.6, 10.8, 10.8), 1.6, 1.6);        // die
+        p.setCompositionMode(QPainter::CompositionMode_Clear);
+        p.setBrush(Qt::black);
+        p.drawRoundedRect(QRectF(11.3, 11.3, 5.4, 5.4), 1.0, 1.0);        // puits central
+        p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+        QPen pin(fg, 1.4);
+        pin.setCapStyle(Qt::FlatCap);
+        p.setPen(pin);
+        for (qreal t : { 10.4, 12.8, 15.2, 17.6 }) {                      // 4 broches par côté
+            p.drawLine(QPointF(t, 5.6), QPointF(t, 8.7));
+            p.drawLine(QPointF(t, 19.3), QPointF(t, 22.4));
+            p.drawLine(QPointF(5.6, t), QPointF(8.7, t));
+            p.drawLine(QPointF(19.3, t), QPointF(22.4, t));
+        }
+        drawScrews();
         break;
-    }
-    default: {  // Ventilateur : cadre + 7 pales incurvées + moyeu annulaire
+    }    default: {  // Ventilateur : cadre + 7 pales incurvées + moyeu annulaire
         drawFrame(10.6);
         p.setPen(Qt::NoPen);
         p.setBrush(fg);
@@ -640,6 +649,13 @@ QFrame* PumpWidget::makeSeparator()
     return line;
 }
 
+// Canaux GPU : LHM ("/gpu…"), ADLX AMD ("adlx/…"), NVML NVIDIA ("nvml/…").
+static bool isGpuChannelId(const QString& id)
+{
+    return id.startsWith(QStringLiteral("/gpu")) || id.startsWith(QStringLiteral("adlx/"))
+        || id.startsWith(QStringLiteral("nvml/"));
+}
+
 PumpWidget::ChannelPanel* PumpWidget::createPanel(const QString& id,
                                                   const QString& title, bool isPump)
 {
@@ -648,7 +664,7 @@ PumpWidget::ChannelPanel* PumpWidget::createPanel(const QString& id,
     p->defaultName = title;
     p->isPump      = isPump;
     p->iconType    = isPump ? IconPump
-                   : id.startsWith(QStringLiteral("/gpu")) ? IconGpu
+                   : isGpuChannelId(id) ? IconGpu
                    : IconFan;
 
     p->box = new QWidget();
@@ -667,7 +683,7 @@ PumpWidget::ChannelPanel* PumpWidget::createPanel(const QString& id,
     p->icon = new QLabel();
     p->icon->setPixmap(makeChannelIcon(p->iconType, m_darkTheme));
     p->icon->setFixedSize(28, 28);
-    if (!isPump) {
+    if (!isPump && !isGpuChannelId(id)) {   // ni la pompe ni la GPU : Identify inutile
         // Clic sur l'icône = Identify (100 % pendant 5 s, pales animées)
         p->icon->setToolTip(QStringLiteral("Identify"));
         p->icon->installEventFilter(this);
@@ -962,6 +978,7 @@ void PumpWidget::rebuildFanPanels(const QStringList& ids, const QStringList& nam
 {
     m_chIds = ids; m_chNames = names; m_chGroups = groups;
 
+
     // Tout supprimer (les panneaux sont enfants des blocs)
     m_nameOwner.clear();
     m_boxOwner.clear();
@@ -1089,7 +1106,7 @@ void PumpWidget::rebuildFanPanels(const QStringList& ids, const QStringList& nam
             const QString shown = !c.name.isEmpty() ? c.name : names.value(idx);
             const QString grp   = (hid == KRAKEN_FAN_ID) ? m_krakenGroup
                                                          : groups.value(idx);
-            const int iconType  = hid.startsWith(QStringLiteral("/gpu")) ? IconGpu
+            const int iconType  = isGpuChannelId(hid) ? IconGpu
                                                                          : IconFan;
 
             auto* row = new QWidget();
@@ -1266,6 +1283,10 @@ FanChannelConfig& PumpWidget::fanCfg(const QString& id)
             for (const QString& s : m_srcIds)
                 if (s.startsWith(QStringLiteral("/amdcpu"))
                     || s.startsWith(QStringLiteral("/intelcpu"))) { def.sourceId = s; break; }
+            // Ventilateur de GPU (ADLX) : suit la température du GPU par défaut.
+            if ((id.startsWith(QStringLiteral("adlx/")) || id.startsWith(QStringLiteral("nvml/")))
+                && m_srcIds.contains(QStringLiteral("GPU Average")))
+                def.sourceId = QStringLiteral("GPU Average");
         }
         m_fanCfgs.insert(id, def);
     }
@@ -1373,7 +1394,7 @@ void PumpWidget::applyPanelCfgToUi(ChannelPanel* p)
 // vitesse, puis décélération progressive — et la lecture affiche "Identify".
 void PumpWidget::startIdentify(ChannelPanel* p)
 {
-    if (p->isPump || m_identSpin.contains(p->id))
+    if (p->isPump || isGpuChannelId(p->id) || m_identSpin.contains(p->id))
         return;
     if (m_btnCalib && !m_btnCalib->isEnabled())
         return;   // calibration en cours : le worker refuserait (RPM faussés)

@@ -19,3 +19,19 @@ target_link_libraries(tst_pumpworker PRIVATE Qt5::Core Qt5::Test)
 
 enable_testing()
 add_test(NAME tst_pumpworker COMMAND tst_pumpworker)   # Qt bin/ doit être dans le PATH
+# NvmlFan contre une fausse nvml.dll (aucune GPU NVIDIA requise).
+add_library(fake_nvml SHARED fake_nvml.cpp)
+add_executable(tst_nvmlfan tst_nvmlfan.cpp ${SRC}/sensors/NvmlFan.cpp ${SRC}/sensors/NvmlFan.h)
+add_dependencies(tst_nvmlfan fake_nvml)
+target_include_directories(tst_nvmlfan PRIVATE ${SRC})
+target_compile_options(tst_nvmlfan PRIVATE /utf-8)
+target_compile_definitions(tst_nvmlfan PRIVATE NOMINMAX
+    "NVML_TEST_DLL_PATH=\"$<TARGET_FILE:fake_nvml>\"")
+target_link_libraries(tst_nvmlfan PRIVATE Qt5::Core Qt5::Test)
+add_test(NAME tst_nvmlfan COMMAND tst_nvmlfan)
+# Fonctions pures GPU (table de sécurité AMD, récupération) : en-tête seul.
+add_executable(tst_gpufan tst_gpufan.cpp ${SRC}/sensors/GpuFanState.h)
+target_include_directories(tst_gpufan PRIVATE ${SRC})
+target_compile_options(tst_gpufan PRIVATE /utf-8)
+target_link_libraries(tst_gpufan PRIVATE Qt5::Core Qt5::Test)
+add_test(NAME tst_gpufan COMMAND tst_gpufan)

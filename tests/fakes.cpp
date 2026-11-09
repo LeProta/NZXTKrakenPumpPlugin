@@ -55,6 +55,7 @@ bool LhwmFans::init()
     for (int i = 0; i < fake::lhwm.tempIds.size(); ++i)
         m_temps.append({ fake::lhwm.tempIds[i], fake::lhwm.tempNames.value(i) });
     m_ready = true;
+    m_lhwmChannels = m_channels.size();
     return true;
 }
 
@@ -69,5 +70,25 @@ bool LhwmFans::setDuty(const QString& id, int percent)
 }
 
 void LhwmFans::setDefault(const QString& id) { fake::lhwm.setDefaultCalls.append(id); }
+
+// ── AdlxFan (GPU AMD) : sans matériel, aucun canal ───────────────────────────
+struct AdlxFan::Impl {};
+AdlxFan::AdlxFan() : m_d(new Impl) {}
+AdlxFan::~AdlxFan() {}
+bool  AdlxFan::init() { return false; }
+void  AdlxFan::shutdown() {}
+float AdlxFan::value(const QString&) const { return 0.f; }
+bool  AdlxFan::setDuty(const QString&, int) { return false; }
+void  AdlxFan::setDefault(const QString&) {}
+
+// ── NvmlFan (GPU NVIDIA) : sans matériel, aucun canal ─────────────────────────
+struct NvmlFan::Impl {};
+NvmlFan::NvmlFan() : m_d(new Impl) {}
+NvmlFan::~NvmlFan() {}
+bool  NvmlFan::init() { return false; }
+void  NvmlFan::shutdown() {}
+float NvmlFan::value(const QString&) const { return 0.f; }
+bool  NvmlFan::setDuty(const QString&, int) { return false; }
+void  NvmlFan::setDefault(const QString&) {}
 
 } // namespace NZXTKrakenPump

@@ -89,7 +89,7 @@ void PumpWorker::start()
     // Course driver : si l'énumération n'a produit aucun canal pilotable, le
     // driver kernel LHM n'était probablement pas prêt (fréquent juste après
     // l'ouverture de session). On programme des ré-init périodiques.
-    if (m_lhwm.channels().isEmpty()) {
+    if (m_lhwm.lhwmChannelCount() == 0) {
         m_lhwmRetriesLeft = 8;    // ~ jusqu'à 64 s (8 s/essai)
         m_lhwmRetryTick   = 8;
         qWarning() << "[KrakenPump/Fans] no fan channels at startup — "
@@ -608,7 +608,7 @@ void PumpWorker::maybeRetryLhwm()
     m_lhwmRetryTick = 8;
     --m_lhwmRetriesLeft;
     m_lhwm.init();
-    if (!m_lhwm.channels().isEmpty()) {
+    if (m_lhwm.lhwmChannelCount() > 0) {
         m_lhwmRetriesLeft = 0;
         qInfo() << "[KrakenPump/Fans] LHM ready on retry:"
                 << m_lhwm.channels().size() << "fan channel(s).";

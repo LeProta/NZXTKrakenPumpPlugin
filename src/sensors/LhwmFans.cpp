@@ -42,6 +42,22 @@ static void pinGpuDriverModules() {}
 
 bool LhwmFans::init()
 {
+    // LHM (cartes mères) puis ADLX (GPU AMD) : indépendants, l'un peut manquer.
+    // ADLX est ajouté APRÈS : initLhwm() repart d'une liste de canaux vide.
+    m_channels.clear();
+    const bool lhwmOk = initLhwm();
+    m_lhwmChannels = m_channels.size();
+    const bool gpuOk = m_adlx.init();
+    for (const auto& a : m_adlx.channels())
+        m_channels.append({ a.id, a.rpmId, a.name, a.hw });
+    const bool nvOk = m_nvml.init();
+    for (const auto& a : m_nvml.channels())
+        m_channels.append({ a.id, a.rpmId, a.name, a.hw });
+    return lhwmOk || gpuOk || nvOk;
+}
+
+bool LhwmFans::initLhwm()
+{
     // Même garde que le plugin LCD : la lib statique C++/CLI charge l'assembly
     // .NET au premier appel — s'il est absent le process crashe. On vérifie
     // donc la présence du fichier avant tout appel LHWM::.
@@ -199,6 +215,8 @@ bool LhwmFans::init()
 // tuerait le thread worker.
 float LhwmFans::value(const QString& id) const
 {
+    if (AdlxFan::owns(id)) return m_adlx.value(id);
+    if (NvmlFan::owns(id)) return m_nvml.value(id);
     if (!m_ready || id.isEmpty()) return 0.f;
     pinGpuDriverModules();
     try { return LHWM::GetSensorValue(id.toStdString()); }
@@ -207,6 +225,8 @@ float LhwmFans::value(const QString& id) const
 
 bool LhwmFans::setDuty(const QString& id, int percent)
 {
+    if (AdlxFan::owns(id)) return m_adlx.setDuty(id, std::clamp(percent, 0, 100));
+    if (NvmlFan::owns(id)) return m_nvml.setDuty(id, std::clamp(percent, 0, 100));
     if (!m_ready || id.isEmpty()) return false;
     try {
         LHWM::SetControlValue(id.toStdString(),
@@ -219,6 +239,8 @@ bool LhwmFans::setDuty(const QString& id, int percent)
 
 void LhwmFans::setDefault(const QString& id)
 {
+    if (AdlxFan::owns(id)) { m_adlx.setDefault(id); return; }
+    if (NvmlFan::owns(id)) { m_nvml.setDefault(id); return; }
     if (!m_ready || id.isEmpty()) return;
     try { LHWM::SetControlDefault(id.toStdString()); }
     catch (...) {}

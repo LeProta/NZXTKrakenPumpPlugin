@@ -52,8 +52,19 @@ endif()
 get_filename_component(LHWM_WRAPPER_DIR "${LHWM_WRAPPER_DIR}" ABSOLUTE)   # retire les '..' (NMake + chemins longs)
 
 file(GLOB_RECURSE PLUGIN_SOURCES CONFIGURE_DEPENDS src/*.cpp src/*.h)
+# ADLX SDK (AMD, GPUOpen) : en-têtes + helper de chargement d'amdadlx64.dll.
+# Vérifier la licence du SDK ("ADLX SDK License Agreement.pdf" du dépôt AMD) avant
+# de redistribuer third_party/adlx.
+set(ADLX_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/adlx")
+if(NOT EXISTS "${ADLX_ROOT}/SDK/ADLXHelper/Windows/Cpp/ADLXHelper.cpp")
+    message(FATAL_ERROR "ADLX SDK not found in ${ADLX_ROOT} (see https://github.com/GPUOpen-LibrariesAndSDKs/ADLX)")
+endif()
+list(APPEND PLUGIN_SOURCES
+    "${ADLX_ROOT}/SDK/ADLXHelper/Windows/Cpp/ADLXHelper.cpp"
+    "${ADLX_ROOT}/SDK/Platform/Windows/WinAPIs.cpp")
+
 add_library(NZXTKrakenPumpPlugin SHARED ${PLUGIN_SOURCES})
-target_include_directories(NZXTKrakenPumpPlugin PRIVATE src ${HIDAPI_INCLUDE_DIR} ${LHWM_WRAPPER_DIR})
+target_include_directories(NZXTKrakenPumpPlugin PRIVATE src ${HIDAPI_INCLUDE_DIR} ${LHWM_WRAPPER_DIR} ${ADLX_ROOT})
 # /EHa : les exceptions .NET de lhwm-cpp-wrapper (C++/CLI) arrivent en SEH ; sans
 # /EHa les catch(...) qui entourent les appels LHWM:: ne les interceptent pas.
 # /utf-8 : sources UTF-8 sans BOM (libellés UI accentués, °, —). /bigobj : lib C++/CLI.

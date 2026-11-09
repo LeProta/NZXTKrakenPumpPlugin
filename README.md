@@ -23,6 +23,8 @@ Control the pump speed of **NZXT Kraken** AIO coolers, the Kraken fan channel an
 | **Kraken pump** | Speed curve over HID, driven by any temperature source. 20 % safety floor. |
 | **Kraken fan** | The fans plugged into the pump head (Z-series / 2023 / Elite), over HID. |
 | **Motherboard fans** | Every controllable header exposed by the Super I/O chip (via LibreHardwareMonitor). Empty headers are hidden automatically and re-appear when a fan is plugged in. |
+| **GPU fan** | AMD Radeon through ADLX (the AMD SDK, native calls) and NVIDIA GeForce through NVML (
+vml.dll, shipped with the driver). One channel per GPU, shown by default like any other fan. |
 
 ### Modes (per channel)
 
@@ -40,13 +42,20 @@ Liquid (coolant) · GPU Average · GPU Hot Spot · CPU Average · CPU Hot Spot �
 ### General
 
 - Per-channel **Step up / Step down** rate limits (%/s), **Reset**, and **Apply** to copy a curve to other fans.
-- **Identify**: click a fan's icon — the fan spins at 100 % for 5 s. Single-click a name to rename it.
+- **Identify**: click a fan's icon — the fan spins at 100 % for 5 s (not available for the pump and the GPU fan). Single-click a name to rename it.
 - Smoothed 1 Hz control loop: anti-oscillation (EMA + deadband), Zero-RPM hysteresis with spin-up kick, dead sensors never drive a fan, Elite V2 0 % self-reset handled.
 - Motherboard channels are returned to **BIOS control** when the plugin unloads.
 - °C / °F follows the OpenRGB locale setting.
 - Settings stored in `%APPDATA%\OpenRGB\NZXTKrakenPump`.
 
-> **GPU fans are intentionally not exposed.** On recent AMD Radeon cards (RDNA3/RDNA4) the driver API used by LibreHardwareMonitor rejects fan writes (`ADL_ERR_NOT_SUPPORTED`), so the channel would silently do nothing.
+### GPU fans
+
+- **AMD (ADLX).** The channel drives the card's *manual fan tuning* table. ADLX has no direct duty, so a fixed speed is written as a flat table. While the plugin drives the GPU it **turns the hardware zero-RPM off** (otherwise the fan stays stopped when cool whatever the table says); a request below the card's minimum turns it back on. Stock settings are restored when you return the channel to the BIOS or exit OpenRGB.
+  - **Safety.** From 65 °C the table never goes below the card's own original curve, even if the plugin stops writing (OpenRGB frozen or killed).
+  - **Unclean exit.** The original table and zero-RPM state are saved in `%APPDATA%\OpenRGB\NZXTKrakenPump\adlx_recovery_<card>.txt` before the first write and put back at the next start — unless you changed the fan table in Adrenalin in the meantime (then nothing is overwritten).
+  - ADLX asks for a *factory reset* of the GPU tuning when a change is not possible in the current state. The plugin **refuses it** (it would also erase your Adrenalin overclock): the write fails and is logged once.
+  - Fan speed range comes from the card (RX 9070 XT: 20–100 %).
+- **NVIDIA (NVML).** Needs administrator rights. `nvmlDeviceSetFanSpeed_v2` switches the GPU to the **manual** fan policy; the plugin enforces a thermal floor on top of your curve (at least 60 % from 75 °C, 100 % from 85 °C, 3 °C hysteresis, checked every second) and restores the automatic policy (`nvmlDeviceSetDefaultFanSpeed_v2`) on exit; a marker file (`nvml_recovery.txt`) does the same after an unclean exit. The minimum is the card's own (usually 30 %): NVML has no zero-RPM. The RPM shown is the *intended* speed reported by NVML, not a measured one. **Developed on AMD — tested against a simulated `nvml.dll`, not on a real NVIDIA card.**
 
 ---
 
@@ -162,7 +171,9 @@ interpolation, ramps, pump floor, sensor faults, return to BIOS, failed writes.
 | CPU temperature source shows 0 | Close NZXT CAM / HWiNFO / Ryzen Master; run OpenRGB as Administrator. |
 | OpenRGB dies a few seconds after startup, `0xC0000005` in `*_unloaded` | Fixed in 1.0.5 — update the plugin. The graphics driver was unloading its user-mode DLL under a sensor poll in flight. |
 | A fan channel disappeared from the list | It was detected as an **empty header** (duty commanded, 0 RPM for 15 s) and hidden. Plug a fan in — it re-appears as soon as a tachometer signal is seen. |
-| Fans revert to BIOS behaviour after closing OpenRGB | By design — motherboard channels are handed back to the BIOS on exit. |
+| Fans revert to BIOS behaviour after closing OpenRGB | By design — motherboard and GPU channels are handed back to the BIOS/driver on exit. |
+| GPU fan stays at a fixed speed after OpenRGB was killed | Start OpenRGB again: the stock table (AMD) / automatic policy (NVIDIA) is restored from the recovery file. Never leave a GPU fan on a flat low speed under load. |
+| GPU fan never stops when idle (AMD) | Expected: the plugin disables the card's zero-RPM while it drives the fan. Use a curve that goes below the card's minimum (20 % on RX 9070 XT) at low temperature to stop it. |
 
 Logs are written next to OpenRGB's own log files (`NZXTKrakenPump_<timestamp>.log`), and make sure you have enabled logs in the OpenRGB settings for the logs to appear.
 
