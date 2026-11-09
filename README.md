@@ -84,7 +84,7 @@ Motherboard fans and CPU/GPU temperature sources are read through [LibreHardware
 
 > ⚠️ Use that build — it ships LibreHardwareMonitor 0.9.4 plus the *return control to BIOS* API this plugin needs. The older copy distributed with the OpenRGB Hardware Sync plugin will not expose motherboard fans. It is fully backward-compatible, including with the [NZXT Kraken LCD plugin](https://github.com/LeProta/NZXTKrakenLCDPlugin).
 
-Without `lhwm-wrapper.dll` the plugin still loads and controls the Kraken pump/fan — only the motherboard channels and system temperature sources disappear.
+Without `lhwm-wrapper.dll` the tab shows a *"Cannot load the plugin"* message with the download link, and nothing else starts — since v1.0.6 the Kraken pump/fan channels are behind the same requirement.
 
 ### 3. Install the plugin
 
@@ -99,7 +99,7 @@ Restart OpenRGB — a **NZXT Kraken Pump** tab will appear.
 
 ### 4. Run OpenRGB as Administrator
 
-Required for motherboard fan control and CPU temperatures (ring-0 sensor driver). The Kraken pump/fan channel and the liquid temperature source work without it.
+Required for motherboard fan control and CPU temperatures (ring-0 sensor driver), and — since v1.0.6 — for the plugin tab itself.
 
 ---
 
@@ -109,34 +109,47 @@ Required for motherboard fan control and CPU temperatures (ring-0 sensor driver)
 
 | Tool | Version |
 |------|---------|
-| Visual Studio Build Tools | 2019 / 2022 — *Desktop development with C++* + *.NET Framework 4.x SDK* |
+| Visual Studio Build Tools | 2019 (v142, same toolset as `lhwm-cpp-wrapper.lib`) or 2022 — *Desktop development with C++* |
 | Qt | 5.15.2 `msvc2019_64` |
-| vcpkg | *optional* — only if you prefer a system `hidapi` over the bundled import library |
-| CMake | ≥ 3.16 |
+| CMake | ≥ 3.16 (the one bundled with Visual Studio works) |
+| hidapi | headers + import library — `vcpkg install hidapi:x64-windows`, or any folder with `include/hidapi/hidapi.h` and `lib/hidapi.lib` |
+| [lhwm-wrapper](https://github.com/LeProta/lhwm-wrapper) | cloned **next to** this repository (provides `lhwm-cpp-wrapper.h` and the prebuilt `lhwm-cpp-wrapper.lib`) |
 
 ### Steps
 
-Use an **x64 Native Tools Command Prompt for VS**:
+Use an **x64 Native Tools Command Prompt for VS**, from a short path (NMake cannot open files whose full path exceeds 260 characters):
 
 ```bat
+git clone https://github.com/LeProta/lhwm-wrapper
 git clone https://github.com/LeProta/NZXTKrakenPumpPlugin
 cd NZXTKrakenPumpPlugin
 
 cmake -S . -B build -G "NMake Makefiles" ^
-  -DCMAKE_PREFIX_PATH=C:/Qt/5.15.2/msvc2019_64
+  -DCMAKE_PREFIX_PATH=C:/Qt/5.15.2/msvc2019_64 ^
+  -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake
 
 cmake --build build
 ```
 
 Output: `build/NZXTKrakenPumpPlugin.dll`.
 
-> `hidapi` is resolved in this order: `pkg-config`, then `find_library`, then the
-> import library bundled under `third_party/`. No vcpkg install is required.
-> To use your own build instead, pass the vcpkg toolchain:
-> `-DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake`
+> Without vcpkg, pass `-DHIDAPI_ROOT=<folder>` instead of the toolchain file.
+> `-DLHWM_WRAPPER_DIR=<folder>` overrides the wrapper location.
+> The build is forced to Release: OpenRGB rejects plugins linked to debug Qt DLLs, and
+> `lhwm-cpp-wrapper.lib` is compiled with `/MD` (mixing runtimes causes `LNK2038`).
+> `/EHa` is required so that `catch (...)` intercepts .NET exceptions raised by the wrapper.
 
-> The build is forced to Release — `lhwm-cpp-wrapper.lib` is compiled with `/MD` and mixing runtimes causes `LNK2038`.
+### Tests (no hardware)
 
+```bat
+cmake -S tests -B build-tests -G "NMake Makefiles" -DCMAKE_PREFIX_PATH=C:/Qt/5.15.2/msvc2019_64
+cmake --build build-tests
+set PATH=C:\Qt\5.15.2\msvc2019_64\bin;%PATH%
+build-tests\tst_pumpworker.exe
+```
+
+The control loop (`PumpWorker`) runs against fake HID / LibreHardwareMonitor backends: curve
+interpolation, ramps, pump floor, sensor faults, return to BIOS, failed writes.
 ---
 
 ## Troubleshooting
