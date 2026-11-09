@@ -2,4 +2,4 @@
 
 // Version unique du plugin : reprise par info.Version (OpenRGB) et par le
 // vérificateur de mise à jour (comparé au tag GitHub releases/latest).
-#define NZXT_PUMP_VERSION "1.0.7"
+#define NZXT_PUMP_VERSION "1.0.8"
