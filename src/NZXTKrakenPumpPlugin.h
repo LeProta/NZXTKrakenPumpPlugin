@@ -4,9 +4,6 @@
 #include <QImage>
 #include <string>
 
-// ─── Copie exacte de OpenRGBPluginInterface.h (API version 4 / OpenRGB 1.0) ──
-// Ne pas modifier — doit correspondre à la version dans le dossier OpenRGB-source
-
 #define OpenRGBPluginInterface_IID  "com.OpenRGBPluginInterface"
 #define OPENRGB_PLUGIN_API_VERSION  4
 
@@ -33,7 +30,7 @@ struct OpenRGBPluginInfo
     QImage          TabIcon;        // 16×16
 };
 
-class ResourceManagerInterface;    // forward — défini dans OpenRGB-source
+class ResourceManagerInterface;
 
 class OpenRGBPluginInterface
 {
@@ -49,7 +46,6 @@ public:
 
 Q_DECLARE_INTERFACE(OpenRGBPluginInterface, OpenRGBPluginInterface_IID)
 
-// ─── Notre plugin ─────────────────────────────────────────────────────────────
 namespace NZXTKrakenPump { class PumpWidget; }
 
 class NZXTKrakenPumpPlugin

@@ -10,22 +10,10 @@
 #include <QVector>
 #include <algorithm>
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Fonctions pures (sans ADLX/NVML) partagées par AdlxFan et NvmlFan, testables
-// sans GPU : table de ventilation de sécurité, reconnaissance d'une table laissée
-// par le plugin après un arrêt brutal, fichiers de récupération.
-// ─────────────────────────────────────────────────────────────────────────────
 namespace NZXTKrakenPump {
 
-// À partir de cette température, la GPU AMD ne descend jamais sous sa courbe
-// d'origine, même si le plugin cesse d'écrire (OpenRGB figé ou tué) : la table
-// plate du plugin ne doit pas laisser la carte chauffer à vitesse basse.
-// shortcut: seuil fixe ; à rendre réglable si quelqu'un veut un GPU plus silencieux à chaud.
 constexpr int kAdlxFailsafeTempC = 65;
 
-// orig = états (température, vitesse) d'avant le plugin. Retourne la table à écrire :
-// `speed` partout, relevée à la vitesse d'origine dès kAdlxFailsafeTempC.
-// Température -1 = « garder celle de l'état » (seules les vitesses sont écrites).
 inline QVector<QPoint> adlxTable(const QVector<QPoint>& orig, int speed)
 {
     QVector<QPoint> out;
@@ -35,10 +23,6 @@ inline QVector<QPoint> adlxTable(const QVector<QPoint>& orig, int speed)
     return out;
 }
 
-// true si `cur` a la forme d'une table écrite par le plugin à partir de `orig` :
-// mêmes températures, vitesse identique sous le seuil de sécurité, jamais sous
-// l'origine au-dessus. Une courbe personnalisée posée depuis dans Adrenalin n'a pas
-// cette forme : on ne l'écrase pas.
 inline bool adlxLooksLikePluginTable(const QVector<QPoint>& cur, const QVector<QPoint>& orig)
 {
     if (cur.isEmpty() || cur.size() != orig.size()) return false;
@@ -56,7 +40,6 @@ inline bool adlxLooksLikePluginTable(const QVector<QPoint>& cur, const QVector<Q
     return true;
 }
 
-// Fichier de récupération ADLX : "temp vitesse" par ligne puis "zero 0|1".
 inline QByteArray adlxSerialize(const QVector<QPoint>& pts, bool zeroRpm)
 {
     QByteArray b;
@@ -82,7 +65,6 @@ inline bool adlxParse(const QByteArray& data, QVector<QPoint>& pts, bool& zeroRp
     return haveZero && !pts.isEmpty();
 }
 
-// Dossier d'état (même dossier que les réglages du plugin) ; surchargeable par les tests.
 inline QString& gpuFanStateDirRef() { static QString d; return d; }
 inline QString gpuFanStateDir()
 {
@@ -107,4 +89,4 @@ inline bool gpuFanStateWrite(const QString& path, const QByteArray& data)
     return f.open(QIODevice::WriteOnly | QIODevice::Truncate) && f.write(data) == data.size();
 }
 
-} // namespace NZXTKrakenPump
+}

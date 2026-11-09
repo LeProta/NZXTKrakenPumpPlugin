@@ -1,132 +1,99 @@
-# NZXT Kraken Pump — OpenRGB Plugin
+# NZXT Kraken Pump plugin for OpenRGB
 
-_Pump & fan curve control for NZXT Kraken coolers and motherboard fans._
+An OpenRGB plugin that sets the speed of your NZXT Kraken pump and fans, your motherboard fans and your graphics card fan, using temperature curves. It works without NZXT CAM.
 
-![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20(x64)-0078D6)
-![Qt](https://img.shields.io/badge/Qt-5.15-41CD52)
-![OpenRGB](https://img.shields.io/badge/OpenRGB-plugin-CC1010)
-![C++](https://img.shields.io/badge/C%2B%2B-17-00599C)
-![License](https://img.shields.io/badge/license-MIT-3DA639)
+Windows only (10 and 11, 64-bit).
 
-Control the pump speed of **NZXT Kraken** AIO coolers, the Kraken fan channel and **every motherboard fan header** straight from [OpenRGB](https://openrgb.org) — with per-channel temperature curves and **without NZXT CAM**.
+## What it controls
 
-> **Windows-only.** The Kraken channel uses a raw HID transport and the motherboard sensor/fan backend relies on a .NET assembly plus a ring-0 driver. There is no Linux/macOS build for now.
+- The Kraken pump
+- The fans plugged into the Kraken pump head (Z series, 2023, Elite)
+- Every fan header on the motherboard that LibreHardwareMonitor can control
+- The graphics card fan: AMD Radeon through ADLX, NVIDIA GeForce through NVML
 
----
+Each of them gets its own curve and its own temperature source.
 
-## Features
+## Using it
 
-### Channels
+Every fan has a mode:
 
-| Channel | Description |
-|---------|-------------|
-| **Kraken pump** | Speed curve over HID, driven by any temperature source. 20 % safety floor. |
-| **Kraken fan** | The fans plugged into the pump head (Z-series / 2023 / Elite), over HID. |
-| **Motherboard fans** | Every controllable header exposed by the Super I/O chip (via LibreHardwareMonitor). Empty headers are hidden automatically and re-appear when a fan is plugged in. |
-| **GPU fan** | AMD Radeon through ADLX (the AMD SDK, native calls) and NVIDIA GeForce through NVML (
-vml.dll, shipped with the driver). One channel per GPU, shown by default like any other fan. |
+- Silent: a quiet preset curve. This is the default.
+- Performance: a more aggressive preset.
+- Fixed: one constant speed.
+- Custom: draw your own curve. Left click adds a point, right click removes one, and you can drag points around. If you edit a preset it switches to Custom by itself.
 
-### Modes (per channel)
+The temperature source can be the coolant, GPU average, GPU hot spot, CPU average, CPU hot spot, RAM or the motherboard sensor.
 
-| Mode | Description |
-|------|-------------|
-| **Silent** | Quiet preset curve (default). |
-| **Performance** | Aggressive preset curve. |
-| **Fixed** | Constant duty — two linked points, moving one moves the other. |
-| **Custom** | Free-form curve: left-click to add a point, right-click to remove, drag on both axes with %/° guides and a live temperature cursor. Editing a preset switches to Custom automatically. |
+Other things you can do:
 
-### Available temperature sources
+- Limit how fast a fan speeds up or slows down (Step up / Step down).
+- Reset a fan, or copy its curve to other fans with Apply.
+- Click the name of a fan to rename it.
+- Click the icon of a fan to run it at 100 % for 5 seconds so you can tell which one it is. This does not exist for the pump and the GPU fan.
 
-Liquid (coolant) · GPU Average · GPU Hot Spot · CPU Average · CPU Hot Spot · RAM · Motherboard
+The pump never goes below 20 %. Motherboard fans go back to the BIOS when the plugin unloads. Settings are saved in `%APPDATA%\OpenRGB\NZXTKrakenPump`.
 
-### General
+## Supported coolers
 
-- Per-channel **Step up / Step down** rate limits (%/s), **Reset**, and **Apply** to copy a curve to other fans.
-- **Identify**: click a fan's icon — the fan spins at 100 % for 5 s (not available for the pump and the GPU fan). Single-click a name to rename it.
-- Smoothed 1 Hz control loop: anti-oscillation (EMA + deadband), Zero-RPM hysteresis with spin-up kick, dead sensors never drive a fan, Elite V2 0 % self-reset handled.
-- Motherboard channels are returned to **BIOS control** when the plugin unloads.
-- °C / °F follows the OpenRGB locale setting.
-- Settings stored in `%APPDATA%\OpenRGB\NZXTKrakenPump`.
+| Model | Pump | Fans on the pump head |
+|-------|------|-----------------------|
+| Kraken X53 / X63 / X73 (`0x2007`) | yes | no |
+| Kraken X53 / X63 / X73 RGB (`0x2014`) | yes | no |
+| Kraken Z53 (`0x3009`), Z63 (`0x300A`), Z73 (`0x3008`) | yes | yes |
+| Kraken 2023 (`0x300E`) | yes | yes |
+| Kraken Elite 360 (`0x300C`) | yes | yes |
+| Kraken Elite V2 (`0x3012`, `0x3013`) | yes | yes |
 
-### GPU fans
+All of them use vendor ID `0x1E71`. The plugin is developed and tested on a Kraken Elite V2. Motherboard fans work with any Super I/O chip LibreHardwareMonitor supports; it was tested on a Nuvoton NCT6799D (NZXT N7 B650E).
 
-- **AMD (ADLX).** The channel drives the card's *manual fan tuning* table. ADLX has no direct duty, so a fixed speed is written as a flat table. While the plugin drives the GPU it **turns the hardware zero-RPM off** (otherwise the fan stays stopped when cool whatever the table says); a request below the card's minimum turns it back on. Stock settings are restored when you return the channel to the BIOS or exit OpenRGB.
-  - **Safety.** From 65 °C the table never goes below the card's own original curve, even if the plugin stops writing (OpenRGB frozen or killed).
-  - **Unclean exit.** The original table and zero-RPM state are saved in `%APPDATA%\OpenRGB\NZXTKrakenPump\adlx_recovery_<card>.txt` before the first write and put back at the next start — unless you changed the fan table in Adrenalin in the meantime (then nothing is overwritten).
-  - ADLX asks for a *factory reset* of the GPU tuning when a change is not possible in the current state. The plugin **refuses it** (it would also erase your Adrenalin overclock): the write fails and is logged once.
-  - Fan speed range comes from the card (RX 9070 XT: 20–100 %).
-- **NVIDIA (NVML).** Needs administrator rights. `nvmlDeviceSetFanSpeed_v2` switches the GPU to the **manual** fan policy; the plugin enforces a thermal floor on top of your curve (at least 60 % from 75 °C, 100 % from 85 °C, 3 °C hysteresis, checked every second) and restores the automatic policy (`nvmlDeviceSetDefaultFanSpeed_v2`) on exit; a marker file (`nvml_recovery.txt`) does the same after an unclean exit. The minimum is the card's own (usually 30 %): NVML has no zero-RPM. The RPM shown is the *intended* speed reported by NVML, not a measured one. **Developed on AMD — tested against a simulated `nvml.dll`, not on a real NVIDIA card.**
+## Install
 
----
+1. Download `NZXTKrakenPumpPlugin.dll` from the [releases page](https://github.com/LeProta/NZXTKrakenPumpPlugin/releases).
+2. Download `lhwm-wrapper.dll` from [LeProta/lhwm-wrapper](https://github.com/LeProta/lhwm-wrapper/releases) and put it next to `OpenRGB.exe`. It is how the plugin reads motherboard and CPU sensors. The older copy that ships with the OpenRGB Hardware Sync plugin does not expose motherboard fans, so use this one. The [LCD plugin](https://github.com/LeProta/NZXTKrakenLCDPlugin) uses the same file.
+3. Install [PawnIO](https://pawnio.eu) (2.1.0 or newer). It is the driver LibreHardwareMonitor uses to talk to the hardware. Without it there are no motherboard fans and no CPU temperature.
+4. In OpenRGB go to Settings, Plugins, Install plugin and pick the DLL. You can also copy it to `%APPDATA%\OpenRGB\plugins`. Restart OpenRGB and a "NZXT Kraken Pump" tab shows up.
+5. Run OpenRGB as administrator. The plugin needs it for motherboard fans, CPU temperatures and NVIDIA.
 
-## Supported devices
+Without `lhwm-wrapper.dll` the tab only says "Cannot load the plugin" and nothing else starts.
 
-| Model | PID | Pump | Fan channel |
-|-------|-----|------|-------------|
-| NZXT Kraken X53/X63/X73 | `0x2007` | ✔ | — |
-| NZXT Kraken X53/X63/X73 RGB | `0x2014` | ✔ | — |
-| NZXT Kraken Z53 | `0x3009` | ✔ | ✔ |
-| NZXT Kraken Z63 | `0x300A` | ✔ | ✔ |
-| NZXT Kraken Z73 | `0x3008` | ✔ | ✔ |
-| NZXT Kraken 2023 | `0x300E` | ✔ | ✔ |
-| NZXT Kraken Elite 360 | `0x300C` | ✔ | ✔ |
-| NZXT Kraken Elite V2 (2024) | `0x3012` | ✔ | ✔ |
-| NZXT Kraken Elite V2 (alt) | `0x3013` | ✔ | ✔ |
+Keep only plugin files in the plugins folder. OpenRGB tries to load everything in there, backups included.
 
-All devices share VID `0x1E71`. The plugin speaks both `0x72` protocol variants (X3/Z3 and Elite/2023/Elite V2). Primary development target: **Kraken Elite V2 (`0x3012`)**.
+Close NZXT CAM while using this plugin. It keeps applying its own curves and the two fight each other.
 
-Motherboard fans: any Super I/O chip supported by [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) (developed and tested on a Nuvoton NCT6799D — NZXT N7 B650E).
+## GPU fans
 
----
+You do not have to install anything for this. AMD uses `amdadlx64.dll` from the Adrenalin driver, NVIDIA uses `nvml.dll` from the GeForce driver.
 
-## Installation
+AMD (ADLX):
 
-### 1. Get the plugin
+- ADLX has no direct fan speed, only a fan table. The plugin writes a flat table with the speed you asked for.
+- From 65 °C the table never goes below the card's original curve. If OpenRGB freezes or gets killed, the card is still protected.
+- The card's own zero RPM mode would keep the fan stopped when it is cool, whatever the table says. So while the plugin drives the fan, zero RPM is turned off. If a curve asks for less than the card's minimum (20 % on an RX 9070 XT), zero RPM is turned back on.
+- The original table and the zero RPM setting are saved to `adlx_recovery_<card>.txt` before the first write. If OpenRGB did not exit cleanly, they are put back at the next start, unless you changed the fan table in Adrenalin in the meantime.
+- ADLX sometimes asks for a factory reset before it accepts a change. The plugin always says no, because the reset would also wipe your Adrenalin overclock. The write fails and a line is added to the log.
 
-Download the prebuilt **`NZXTKrakenPumpPlugin.dll`** from the [Releases](https://github.com/LeProta/NZXTKrakenPumpPlugin/releases) page, or [build it yourself](#building-from-source).
+NVIDIA (NVML):
 
-### 2. Place `lhwm-wrapper.dll` next to `OpenRGB.exe`
+- Writing a fan speed switches the card to manual fan control, so the plugin adds a safety floor on top of your curve: at least 60 % from 75 °C and 100 % from 85 °C. It is checked every second.
+- The automatic policy is restored when you hand the fan back or exit. After a crash, a marker file called `nvml_recovery.txt` makes the next start do it.
+- The lowest speed is the card's own minimum, usually 30 %. There is no zero RPM through NVML.
+- The RPM shown is the speed NVML says it wants, not a measured one.
+- This part was written on an AMD machine. It was only tested against a fake `nvml.dll`, never on a real NVIDIA card.
 
-Motherboard fans and CPU/GPU temperature sources are read through [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) via this bridge DLL.
+## Building it yourself
 
-**Download `lhwm-wrapper.dll` from [LeProta/lhwm-wrapper](https://github.com/LeProta/lhwm-wrapper/releases)** and place it in the **same folder as `OpenRGB.exe`**.
+You need:
 
-> ⚠️ Use that build — it ships LibreHardwareMonitor 0.9.4 plus the *return control to BIOS* API this plugin needs. The older copy distributed with the OpenRGB Hardware Sync plugin will not expose motherboard fans. It is fully backward-compatible, including with the [NZXT Kraken LCD plugin](https://github.com/LeProta/NZXTKrakenLCDPlugin).
+- Visual Studio Build Tools 2019 or 2022 with the C++ desktop workload
+- Qt 5.15.2 (`msvc2019_64`)
+- CMake 3.16 or newer (the one that comes with Visual Studio is fine)
+- hidapi, for example `vcpkg install hidapi:x64-windows`
+- [lhwm-wrapper](https://github.com/LeProta/lhwm-wrapper) cloned next to this repository
+- the AMD ADLX SDK, see below
 
-Without `lhwm-wrapper.dll` the tab shows a *"Cannot load the plugin"* message with the download link, and nothing else starts — since v1.0.6 the Kraken pump/fan channels are behind the same requirement.
+The ADLX SDK is not in this repository because AMD's license does not allow redistributing it. Download it from [GPUOpen-LibrariesAndSDKs/ADLX](https://github.com/GPUOpen-LibrariesAndSDKs/ADLX) and copy its `SDK` folder to `third_party/adlx/SDK`. Read the license that comes with it first.
 
-### 3. Install the plugin
-
-In OpenRGB: **Settings → Plugins → Install plugin** → select `NZXTKrakenPumpPlugin.dll`.
-
-Or drop it directly into:
-```
-%APPDATA%\OpenRGB\plugins
-```
-
-Restart OpenRGB — a **NZXT Kraken Pump** tab will appear.
-
-### 4. Run OpenRGB as Administrator
-
-Required for motherboard fan control and CPU temperatures (ring-0 sensor driver), and — since v1.0.6 — for the plugin tab itself.
-
----
-
-## Building from source
-
-### Requirements
-
-| Tool | Version |
-|------|---------|
-| Visual Studio Build Tools | 2019 (v142, same toolset as `lhwm-cpp-wrapper.lib`) or 2022 — *Desktop development with C++* |
-| Qt | 5.15.2 `msvc2019_64` |
-| CMake | ≥ 3.16 (the one bundled with Visual Studio works) |
-| hidapi | headers + import library — `vcpkg install hidapi:x64-windows`, or any folder with `include/hidapi/hidapi.h` and `lib/hidapi.lib` |
-| [lhwm-wrapper](https://github.com/LeProta/lhwm-wrapper) | cloned **next to** this repository (provides `lhwm-cpp-wrapper.h` and the prebuilt `lhwm-cpp-wrapper.lib`) |
-
-### Steps
-
-Use an **x64 Native Tools Command Prompt for VS**, from a short path (NMake cannot open files whose full path exceeds 260 characters):
+Open an x64 Native Tools Command Prompt and use a short path, because NMake cannot open files whose full path is longer than 260 characters.
 
 ```bat
 git clone https://github.com/LeProta/lhwm-wrapper
@@ -140,73 +107,57 @@ cmake -S . -B build -G "NMake Makefiles" ^
 cmake --build build
 ```
 
-Output: `build/NZXTKrakenPumpPlugin.dll`.
+The result is `build/NZXTKrakenPumpPlugin.dll`.
 
-> Without vcpkg, pass `-DHIDAPI_ROOT=<folder>` instead of the toolchain file.
-> `-DLHWM_WRAPPER_DIR=<folder>` overrides the wrapper location.
-> The build is forced to Release: OpenRGB rejects plugins linked to debug Qt DLLs, and
-> `lhwm-cpp-wrapper.lib` is compiled with `/MD` (mixing runtimes causes `LNK2038`).
-> `/EHa` is required so that `catch (...)` intercepts .NET exceptions raised by the wrapper.
+If you do not use vcpkg, pass `-DHIDAPI_ROOT=<folder>` instead of the toolchain file. `-DLHWM_WRAPPER_DIR=<folder>` points to a different copy of the wrapper. The build is always Release, because OpenRGB refuses plugins linked to the debug Qt DLLs and `lhwm-cpp-wrapper.lib` is built with `/MD`. `/EHa` is needed so `catch (...)` can catch the .NET exceptions coming from the wrapper.
 
-### Tests (no hardware)
+### Tests
+
+The tests do not need any hardware.
 
 ```bat
 cmake -S tests -B build-tests -G "NMake Makefiles" -DCMAKE_PREFIX_PATH=C:/Qt/5.15.2/msvc2019_64
 cmake --build build-tests
 set PATH=C:\Qt\5.15.2\msvc2019_64\bin;%PATH%
 build-tests\tst_pumpworker.exe
+build-tests\tst_nvmlfan.exe
+build-tests\tst_gpufan.exe
 ```
 
-The control loop (`PumpWorker`) runs against fake HID / LibreHardwareMonitor backends: curve
-interpolation, ramps, pump floor, sensor faults, return to BIOS, failed writes.
----
+`tst_pumpworker` runs the control loop against fake HID and LibreHardwareMonitor backends. `tst_nvmlfan` runs the NVIDIA code against a fake `nvml.dll`. `tst_gpufan` covers the AMD table and recovery helpers.
 
-## Troubleshooting
+## Problems
 
-| Symptom | Fix |
-|---------|-----|
-| No **NZXT Kraken Pump** tab / *"Cannot load the plugin"* | Wrong or corrupted DLL — re-download from Releases. |
-| No motherboard fans listed | `lhwm-wrapper.dll` missing or outdated (use the one from [LeProta/lhwm-wrapper](https://github.com/LeProta/lhwm-wrapper/releases)); OpenRGB not running as Administrator; or *Memory Integrity (HVCI)* / the *Vulnerable Driver Blocklist* is blocking the sensor driver. |
-| Fan/pump % does not change | Close **NZXT CAM** (it keeps re-applying its own curves and fights the plugin). |
-| CPU temperature source shows 0 | Close NZXT CAM / HWiNFO / Ryzen Master; run OpenRGB as Administrator. |
-| OpenRGB dies a few seconds after startup, `0xC0000005` in `*_unloaded` | Fixed in 1.0.5 — update the plugin. The graphics driver was unloading its user-mode DLL under a sensor poll in flight. |
-| A fan channel disappeared from the list | It was detected as an **empty header** (duty commanded, 0 RPM for 15 s) and hidden. Plug a fan in — it re-appears as soon as a tachometer signal is seen. |
-| Fans revert to BIOS behaviour after closing OpenRGB | By design — motherboard and GPU channels are handed back to the BIOS/driver on exit. |
-| GPU fan stays at a fixed speed after OpenRGB was killed | Start OpenRGB again: the stock table (AMD) / automatic policy (NVIDIA) is restored from the recovery file. Never leave a GPU fan on a flat low speed under load. |
-| GPU fan never stops when idle (AMD) | Expected: the plugin disables the card's zero-RPM while it drives the fan. Use a curve that goes below the card's minimum (20 % on RX 9070 XT) at low temperature to stop it. |
+| What you see | What to try |
+|--------------|-------------|
+| No "NZXT Kraken Pump" tab, or "Cannot load the plugin" | `lhwm-wrapper.dll` is missing from the OpenRGB folder, or the DLL is corrupted. Download it again. |
+| No motherboard fans | Wrong or old `lhwm-wrapper.dll`, PawnIO not installed, OpenRGB not running as administrator, or Windows (Memory Integrity, the vulnerable driver blocklist) is blocking the driver. |
+| The speed does not change | Close NZXT CAM. |
+| CPU temperature shows 0 | Close NZXT CAM, HWiNFO and Ryzen Master, and run OpenRGB as administrator. |
+| OpenRGB crashes a few seconds after start with `0xC0000005` in `*_unloaded` | Update to 1.0.5 or newer. The graphics driver was unloading one of its DLLs while a sensor was being read. |
+| A fan disappeared from the list | The plugin thought the header was empty (a speed was set and it read 0 RPM for 15 seconds) and hid it. Plug a fan in and it comes back as soon as it sees a tach signal. |
+| Fans go back to the BIOS when OpenRGB closes | That is on purpose. Motherboard and GPU fans are handed back on exit. |
+| The GPU fan stays at a low fixed speed after OpenRGB was killed | Start OpenRGB again. The original table (AMD) or the automatic policy (NVIDIA) is restored from the recovery file. |
+| The AMD GPU fan never stops at idle | The plugin turned the card's zero RPM off. Use a curve that goes below the card's minimum at low temperatures. |
 
-Logs are written next to OpenRGB's own log files (`NZXTKrakenPump_<timestamp>.log`), and make sure you have enabled logs in the OpenRGB settings for the logs to appear.
+Logs go next to the OpenRGB logs, in `NZXTKrakenPump_<timestamp>.log`. You have to turn logging on in the OpenRGB settings to get them.
 
----
+## Notes for developers
 
-## How it works
+- Kraken: HID command `0x72` with a table of speeds per degree. X3/Z3 coolers take 40 values (20 to 59 °C), Kraken 2023, Elite and Elite V2 take 60 (0 to 59 °C) with different headers per channel. The plugin writes a flat table, recomputed once a second, so any temperature source can drive the pump and not only the coolant sensor. The table forces 100 % from 50 °C of coolant.
+- Each second the control loop reads the temperatures, smooths them, interpolates the curve and applies the step limits. A write only happens if the speed changed.
+- Status is read with `0x74 0x01`. It returns coolant temperature, pump and fan RPM and the speed the cooler reports. If that does not match what was written, the command is sent again (the Elite V2 resets itself to 0 % sometimes).
+- The pump plugin and the [LCD plugin](https://github.com/LeProta/NZXTKrakenLCDPlugin) can run on the same cooler. Each one opens its own HID handle and Windows takes care of sharing it.
 
-- **Kraken channels.** HID command `0x72` with a duty-per-°C table. Two protocol variants: X3/Z3 use 40 duties (20–59 °C), Kraken 2023 / Elite / Elite V2 use different per-channel headers with 60 duties (0–59 °C). The plugin writes a *flat* table recomputed by a 1 Hz software loop, so any temperature source can drive the pump — not just the liquid sensor.
-- **Control loop.** Each tick: temperatures read once and smoothed (EMA), curve interpolation, then rate limiting (Step up/down) — a write only happens when the duty actually changes.
-- **Status.** `0x74 0x01` request → liquid temperature, pump/fan RPM and reported duty. The reported duty is compared to the expected value every tick and the command is re-sent on mismatch (Elite V2 self-reset quirk).
-- **Motherboard fans.** LibreHardwareMonitor through a C++/CLI bridge (`lhwm-wrapper.dll`); every touched channel is released with `Control.SetDefault()` (BIOS) when the plugin unloads.
-- **Coexistence.** Runs alongside the [NZXT Kraken LCD plugin](https://github.com/LeProta/NZXTKrakenLCDPlugin) on the same cooler: each plugin opens its own HID handle, Windows duplicates input reports to every handle and serializes writes.
+## Credits
 
----
-
-## Acknowledgements
-
-- [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) — host application and plugin SDK.
-- [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) — sensor/fan backend and the Kraken `0x72` protocol reference (MPL-2.0).
-- [liquidctl](https://github.com/liquidctl/liquidctl) — Kraken protocol research.
-- [lhwm-wrapper](https://github.com/LeProta/lhwm-wrapper) — C++/CLI bridge over LibreHardwareMonitor.
-
----
-
-## Related
-
-- [NZXT Kraken LCD plugin](https://github.com/LeProta/NZXTKrakenLCDPlugin) — drives the LCD screen of the same coolers.
-- [lhwm-wrapper](https://github.com/LeProta/lhwm-wrapper) — the sensor/fan bridge DLL used by both plugins.
-
----
+- [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) for the plugin interface
+- [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) for the sensors, the fan control and the `0x72` protocol reference (MPL-2.0)
+- [liquidctl](https://github.com/liquidctl/liquidctl) for the Kraken protocol research
+- [lhwm-wrapper](https://github.com/LeProta/lhwm-wrapper), the bridge between this plugin and LibreHardwareMonitor
+- [AMD ADLX](https://github.com/GPUOpen-LibrariesAndSDKs/ADLX) for the AMD GPU fan control
+- [PawnIO](https://pawnio.eu) for the hardware access driver
 
 ## License
 
-Released under the **MIT License** — see [`LICENSE`](LICENSE).
-
-Third-party components (LibreHardwareMonitor, Qt, hidapi) remain under their respective licenses.
+MIT, see [LICENSE](LICENSE). Qt, hidapi, LibreHardwareMonitor and the AMD ADLX SDK keep their own licenses.

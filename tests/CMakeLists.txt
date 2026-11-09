@@ -1,6 +1,3 @@
-# Tests sans matériel de PumpWorker (Qt seul : ni hidapi ni lhwm-wrapper requis).
-#   cmake -S tests -B build-tests -DCMAKE_PREFIX_PATH=C:/Qt/5.15.2/msvc2019_64
-#   cmake --build build-tests --config Release && ctest --test-dir build-tests -C Release
 cmake_minimum_required(VERSION 3.16)
 project(NZXTKrakenPumpTests LANGUAGES CXX)
 
@@ -18,8 +15,7 @@ target_compile_definitions(tst_pumpworker PRIVATE NOMINMAX)
 target_link_libraries(tst_pumpworker PRIVATE Qt5::Core Qt5::Test)
 
 enable_testing()
-add_test(NAME tst_pumpworker COMMAND tst_pumpworker)   # Qt bin/ doit être dans le PATH
-# NvmlFan contre une fausse nvml.dll (aucune GPU NVIDIA requise).
+add_test(NAME tst_pumpworker COMMAND tst_pumpworker)
 add_library(fake_nvml SHARED fake_nvml.cpp)
 add_executable(tst_nvmlfan tst_nvmlfan.cpp ${SRC}/sensors/NvmlFan.cpp ${SRC}/sensors/NvmlFan.h)
 add_dependencies(tst_nvmlfan fake_nvml)
@@ -29,7 +25,6 @@ target_compile_definitions(tst_nvmlfan PRIVATE NOMINMAX
     "NVML_TEST_DLL_PATH=\"$<TARGET_FILE:fake_nvml>\"")
 target_link_libraries(tst_nvmlfan PRIVATE Qt5::Core Qt5::Test)
 add_test(NAME tst_nvmlfan COMMAND tst_nvmlfan)
-# Fonctions pures GPU (table de sécurité AMD, récupération) : en-tête seul.
 add_executable(tst_gpufan tst_gpufan.cpp ${SRC}/sensors/GpuFanState.h)
 target_include_directories(tst_gpufan PRIVATE ${SRC})
 target_compile_options(tst_gpufan PRIVATE /utf-8)

@@ -22,13 +22,13 @@ struct Gpu {
     QString                 name;
     ADLX_IntRange           speedRange{};
     ADLX_IntRange           tempRange{};
-    QVector<QPoint>         orig;           // (température, vitesse) d'avant le plugin
+    QVector<QPoint>         orig;
     adlx_bool               zeroSupported = false;
     adlx_bool               zeroOrig = false;
     adlx_bool               zeroNow  = false;
     int                     lastDuty = -1;
     bool                    touched  = false;
-    bool                    failLogged = false;   // un seul log par série d'échecs
+    bool                    failLogged = false;
 };
 } // namespace
 
@@ -41,7 +41,6 @@ struct AdlxFan::Impl {
 
     Gpu* find(const QString& id, bool* isFan = nullptr)
     {
-        // "adlx/<n>/control" | "adlx/<n>/fan"
         const QStringList p = id.split(QLatin1Char('/'));
         if (p.size() != 3 || p[0] != QLatin1String("adlx")) return nullptr;
         bool ok = false;
@@ -51,9 +50,6 @@ struct AdlxFan::Impl {
         return &gpus[n];
     }
 
-    // Écrit les vitesses de la table ; ne fait JAMAIS de ResetToFactory.
-    // pts[i] = (température, vitesse) ; température < 0 = garder celle de l'état
-    // courant (méthode d'ADLXWrapper/FanControl : on part de GetFanTuningStates).
     bool writeStates(Gpu& g, const QVector<QPoint>& pts)
     {
         IADLXManualFanTuningStateListPtr states;
@@ -102,10 +98,9 @@ AdlxFan::~AdlxFan() { shutdown(); }
 
 bool AdlxFan::init()
 {
-    if (m_d->helperOk) {                       // déjà initialisé (retry du worker)
+    if (m_d->helperOk) {
         return !m_channels.isEmpty();
     }
-    // amdadlx64.dll absente (pas de pilote AMD) -> Initialize échoue proprement.
     if (ADLX_FAILED(m_d->helper.Initialize()))
         return false;
     m_d->helperOk = true;
@@ -142,7 +137,6 @@ bool AdlxFan::init()
             || ADLX_FAILED(g.tuning->GetFanTuningRanges(&g.speedRange, &g.tempRange)))
             continue;
 
-        // État d'avant le plugin : restauré par setDefault().
         IADLXManualFanTuningStateListPtr cur;
         if (ADLX_FAILED(g.tuning->GetFanTuningStates(&cur)) || !cur) continue;
         for (adlx_uint k = cur->Begin(); k != cur->End(); ++k) {
@@ -162,11 +156,6 @@ bool AdlxFan::init()
             g.zeroNow = g.zeroOrig;
         }
 
-        // Arrêt brutal précédent (OpenRGB tué) : la table plate du plugin est encore
-        // dans la carte et la « table courante » lue ci-dessus n'est PAS l'origine.
-        // Le fichier de récupération garde l'origine ; on la remet si (et seulement si)
-        // la table courante a la forme de celle du plugin — jamais par-dessus une
-        // courbe posée depuis dans Adrenalin.
         const QString rf = gpuFanStatePath(QStringLiteral("adlx_recovery"), g.name);
         if (QFile::exists(rf)) {
             QVector<QPoint> saved; bool savedZero = false;
@@ -175,7 +164,7 @@ bool AdlxFan::init()
                                 && adlxParse(f.readAll(), saved, savedZero);
             f.close();
             if (parsed && g.orig == saved) {
-                QFile::remove(rf);          // déjà à l'origine (sortie propre ratée de peu)
+                QFile::remove(rf);
                 g.zeroOrig = savedZero;
             } else if (parsed && adlxLooksLikePluginTable(g.orig, saved)) {
                 bool ok = m_d->writeStates(g, saved);
@@ -188,7 +177,7 @@ bool AdlxFan::init()
                                : "— could not restore stock fan table after an unclean exit.");
                 g.orig = saved;
                 g.zeroOrig = savedZero;
-                if (ok) QFile::remove(rf); else g.touched = true;   // retentera à setDefault
+                if (ok) QFile::remove(rf); else g.touched = true;
             } else {
                 if (parsed)
                     qInfo() << "[KrakenPump/Fans] ADLX:" << g.name
@@ -227,7 +216,6 @@ void AdlxFan::shutdown()
     for (Gpu& g : m_d->gpus)
         if (g.touched && g.tuning)
             setDefault(QStringLiteral("adlx/%1/control").arg(&g - m_d->gpus.data()));
-    // Aucune interface ADLX ne doit survivre à Terminate() (violation d'accès).
     m_d->gpus.clear();
     m_d->perf       = nullptr;
     m_d->tuningSvc  = nullptr;
@@ -258,12 +246,9 @@ bool AdlxFan::setDuty(const QString& id, int percent)
     if (!g) return false;
 
     const int lo = g->speedRange.minValue, hi = g->speedRange.maxValue;
-    const bool below = percent < lo;               // demande sous le minimum matériel
+    const bool below = percent < lo;
     const int  speed = std::clamp(percent, lo, hi);
 
-    // Avant la 1re modification : l'origine part sur disque (récupération si OpenRGB
-    // est tué) et `touched` est levé, y compris si l'écriture échoue après avoir
-    // changé le zero-RPM — shutdown()/setDefault() restaureront alors tout.
     if (!g->touched) {
         const QString rf = gpuFanStatePath(QStringLiteral("adlx_recovery"), g->name);
         if (!gpuFanStateWrite(rf, adlxSerialize(g->orig, g->zeroOrig)))
@@ -271,19 +256,12 @@ bool AdlxFan::setDuty(const QString& id, int percent)
         g->touched = true;
     }
 
-    // Zero-RPM matériel : à froid il garde le ventilo coupé quelle que soit la
-    // table (même à 100 %). Tant que le plugin pilote la GPU, c'est la courbe de
-    // l'utilisateur qui décide : activé seulement pour une demande sous le
-    // minimum matériel (= « ventilo coupé »), désactivé sinon. L'état d'origine
-    // est rétabli par setDefault().
     if (g->zeroSupported) {
         const adlx_bool want = below;
         if (want != g->zeroNow && ADLX_SUCCEEDED(g->tuning->SetZeroRPMState(want)))
             g->zeroNow = want;
     }
 
-    // Table plate, relevée à la courbe d'origine au-dessus de kAdlxFailsafeTempC
-    // (la carte reste protégée si le plugin cesse d'écrire). Températures inchangées.
     if (!m_d->writeStates(*g, adlxTable(g->orig, speed)))
         return false;
     g->lastDuty = percent;
@@ -304,4 +282,4 @@ void AdlxFan::setDefault(const QString& id)
     }
 }
 
-} // namespace NZXTKrakenPump
+}

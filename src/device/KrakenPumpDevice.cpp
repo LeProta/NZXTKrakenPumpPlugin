@@ -26,7 +26,6 @@ KrakenPumpDevice::KrakenPumpDevice()
 KrakenPumpDevice::~KrakenPumpDevice()
 {
     close();
-    // PAS de hid_exit() : état hidapi global au process (cf. plugin KrakenLCD).
 }
 
 int KrakenPumpDevice::hidReportLen() const
@@ -34,7 +33,6 @@ int KrakenPumpDevice::hidReportLen() const
     return m_info ? m_info->hidReportLen : 64;
 }
 
-// ── Détection / ouverture ────────────────────────────────────────────────────
 bool KrakenPumpDevice::open()
 {
     for (const auto& dev : SUPPORTED_DEVICES) {
@@ -98,7 +96,6 @@ QString KrakenPumpDevice::displayName() const
     return m_info ? QString::fromUtf8(m_info->name) : QStringLiteral("Not connected");
 }
 
-// ── HID classique (hidapi) ───────────────────────────────────────────────────
 bool KrakenPumpDevice::openHID(uint16_t vid, uint16_t pid)
 {
     m_hid = hid_open(vid, pid, nullptr);
@@ -109,8 +106,6 @@ bool KrakenPumpDevice::openHID(uint16_t vid, uint16_t pid)
     return true;
 }
 
-// Le paquet envoyé doit faire exactement reportLen(+1 ReportID) octets —
-// 64 pour X3/Z3/Elite, 512 pour Elite V2.
 bool KrakenPumpDevice::sendHIDCommand(const uint8_t* data, size_t len)
 {
     if (!data) return false;
@@ -118,17 +113,14 @@ bool KrakenPumpDevice::sendHIDCommand(const uint8_t* data, size_t len)
     const int reportLen = hidReportLen();
 
 #ifdef _WIN32
-    // Plan A : WinHID direct (WriteFile overlapped) — voie fiable sous Windows,
-    // contourne le bug d'hidapi 0.14 sur WriteFile.
     if (m_winHidHandle != INVALID_HANDLE_VALUE) {
         if (winHidWrite(data, len))
             return true;
     }
 #endif
 
-    // Plan B : hidapi
     if (m_hid) {
-        const int pktSize = reportLen + 1; // +1 ReportID
+        const int pktSize = reportLen + 1;
         std::vector<uint8_t> pkt(pktSize, 0);
         pkt[0] = 0x00;
         if (len > (size_t)reportLen) len = reportLen;
@@ -165,27 +157,22 @@ bool KrakenPumpDevice::readHIDResponse(uint8_t* buf, size_t maxLen, int timeoutM
     return false;
 }
 
-// ── Init ─────────────────────────────────────────────────────────────────────
 bool KrakenPumpDevice::initialize()
 {
     QMutexLocker lock(&m_cmdMutex);
 
-    // Purge des rapports en attente (bornée)
     uint8_t discard[512];
     for (int i = 0; i < 16 && readHIDResponse(discard, sizeof(discard), 1); ++i) {}
 
-    // Intervalle des rapports de statut + requête firmware (cf. liquidctl X3/Z3)
     const uint8_t interval[5] = { 0x70, 0x02, 0x01, 0xB8, 0x01 };
     const uint8_t fwReq[2]    = { 0x70, 0x01 };
     bool ok = sendHIDCommand(interval, sizeof(interval));
     ok = sendHIDCommand(fwReq, sizeof(fwReq)) && ok;
 
-    // Drainer les réponses 0x71 (non exploitées, best effort)
     for (int i = 0; i < 4 && readHIDResponse(discard, sizeof(discard), 50); ++i) {}
     return ok;
 }
 
-// ── Courbe de vitesse ────────────────────────────────────────────────────────
 bool KrakenPumpDevice::setCurve(Channel ch, const std::array<uint8_t, 60>& duty)
 {
     if (!isOpen() || !m_info) return false;
@@ -194,7 +181,6 @@ bool KrakenPumpDevice::setCurve(Channel ch, const std::array<uint8_t, 60>& duty)
     uint8_t cmd[64] = { 0 };
     size_t  len     = 0;
     if (m_info->newProto) {
-        // Elite/2023/Elite V2 : en-tête spécifique par canal + 60 duties (0..59 °C)
         cmd[0] = 0x72;
         cmd[1] = static_cast<uint8_t>(ch);
         cmd[2] = 0x01;
@@ -203,7 +189,6 @@ bool KrakenPumpDevice::setCurve(Channel ch, const std::array<uint8_t, 60>& duty)
             cmd[4 + i] = std::min<uint8_t>(duty[i], 100);
         len = 64;
     } else {
-        // X3/Z3 : 0x72, canal, 0x00, 0x00 + 40 duties (20..59 °C)
         cmd[0] = 0x72;
         cmd[1] = static_cast<uint8_t>(ch);
         for (size_t i = 0; i < 40; ++i)
@@ -219,7 +204,6 @@ bool KrakenPumpDevice::setCurve(Channel ch, const std::array<uint8_t, 60>& duty)
     return true;
 }
 
-// ── Statut ───────────────────────────────────────────────────────────────────
 bool KrakenPumpDevice::readStatus(PumpReadings& out)
 {
     if (!isOpen()) return false;
@@ -232,8 +216,6 @@ bool KrakenPumpDevice::readStatus(PumpReadings& out)
     const int maxBuf = hidReportLen() + 1;
     std::vector<uint8_t> buf(maxBuf, 0);
 
-    // Boucle bornée : la file peut contenir des rapports étrangers (acks 0x37
-    // du plugin KrakenLCD, réponses 0x71...) — on les saute jusqu'au 0x75 0x01.
     QElapsedTimer deadline;
     deadline.start();
     while (deadline.elapsed() < 500) {
@@ -243,11 +225,10 @@ bool KrakenPumpDevice::readStatus(PumpReadings& out)
 
         const uint8_t* p = buf.data();
         if (p[0] == 0x00 && p[1] == 0x75 && p[2] == 0x01)
-            p++; // skip ReportID
+            p++;
         if (p[0] != 0x75 || p[1] != 0x01)
             continue;
 
-        // Offsets identiques à liquidctl / plugin SignalRGB
         out.liquidTemp = static_cast<float>(p[15]) + static_cast<float>(p[16]) / 10.0f;
         out.pumpRPM    = (static_cast<int>(p[18]) << 8) | p[17];
         out.pumpDuty   = p[19];
@@ -258,7 +239,6 @@ bool KrakenPumpDevice::readStatus(PumpReadings& out)
     return false;
 }
 
-// ── Sondage de présence ──────────────────────────────────────────────────────
 bool KrakenPumpDevice::anySupportedPresent()
 {
     hid_device_info* list = hid_enumerate(0x1E71, 0);
@@ -270,9 +250,6 @@ bool KrakenPumpDevice::anySupportedPresent()
     return found;
 }
 
-// =============================================================================
-// Windows : WinHID direct — contourne le bug d'hidapi 0.14.0 sur WriteFile
-// =============================================================================
 #ifdef _WIN32
 
 bool KrakenPumpDevice::openWinHID(uint16_t vid, uint16_t pid)
@@ -303,7 +280,6 @@ bool KrakenPumpDevice::openWinHID(uint16_t vid, uint16_t pid)
         if (path.find(vidStr) == std::wstring::npos || path.find(pidStr) == std::wstring::npos)
             continue;
 
-        // FILE_FLAG_OVERLAPPED : requis pour ReadFile avec timeout (winHidRead)
         HANDLE h = CreateFileW(detail->DevicePath,
             GENERIC_READ | GENERIC_WRITE,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -361,8 +337,6 @@ bool KrakenPumpDevice::winHidWrite(const uint8_t* data, size_t len)
     if (m_winHidHandle == INVALID_HANDLE_VALUE || !data || m_winHidOutputLen <= 0)
         return false;
 
-    // === Stratégie 1 : WriteFile direct (pas de ReportID préfixé — rapports
-    // Vendor Defined sans ReportID numéroté). Handle OVERLAPPED. ===
     {
         std::vector<BYTE> buf(m_winHidOutputLen, 0);
         const size_t toCopy = std::min(len, buf.size());
@@ -393,7 +367,6 @@ bool KrakenPumpDevice::winHidWrite(const uint8_t* data, size_t len)
                        << "size=" << m_winHidOutputLen;
     }
 
-    // === Stratégie 2 : HidD_SetOutputReport avec ReportID=0 préfixé ===
     {
         std::vector<BYTE> buf(m_winHidOutputLen, 0);
         const size_t toCopy = std::min(len, buf.size() - 1);
@@ -402,7 +375,6 @@ bool KrakenPumpDevice::winHidWrite(const uint8_t* data, size_t len)
             return true;
     }
 
-    // === Stratégie 3 : HidD_SetOutputReport avec data[0] comme ReportID ===
     {
         std::vector<BYTE> buf(m_winHidOutputLen, 0);
         if (len <= buf.size()) {
@@ -446,7 +418,6 @@ bool KrakenPumpDevice::winHidRead(uint8_t* data, size_t maxLen, int& bytesRead, 
     if (!GetOverlappedResult(m_winHidHandle, &ov, &read, TRUE) || read == 0)
         return false;
 
-    // Skip le ReportID (byte 0)
     const size_t toCopy = std::min<size_t>(read > 0 ? size_t(read) - 1 : 0, maxLen);
     std::memcpy(data, buf.data() + 1, toCopy);
     bytesRead = static_cast<int>(toCopy);
@@ -455,4 +426,4 @@ bool KrakenPumpDevice::winHidRead(uint8_t* data, size_t maxLen, int& bytesRead, 
 
 #endif // _WIN32
 
-} // namespace NZXTKrakenPump
+}

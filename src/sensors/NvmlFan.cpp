@@ -9,7 +9,6 @@
 
 namespace NZXTKrakenPump {
 
-// ABI NVML (nvml.h, NVIDIA) : types minimaux déclarés ici — pas de SDK à embarquer.
 namespace {
 using nvmlReturn_t = int;
 using nvmlDevice_t = void*;
@@ -18,7 +17,7 @@ constexpr unsigned     NVML_TEMPERATURE_GPU = 0;
 
 struct nvmlFanSpeedInfo_t {     // nvmlFanSpeedInfo_v1_t
     unsigned int version;       // sizeof(struct) | (1 << 24)
-    unsigned int fan;           // IN : index du ventilateur
+    unsigned int fan;
     unsigned int speed;         // OUT : RPM
 };
 
@@ -40,10 +39,10 @@ struct Gpu {
     QString      name;
     unsigned     fans = 0;
     unsigned     minPct = 0, maxPct = 100;
-    int          desired = -1;      // vitesse voulue par la courbe (bornée min..max)
-    int          applied = -1;      // vitesse réellement écrite (desired relevée par le plancher)
-    int          floorLevel = 0;    // palier du plancher thermique (avec hystérésis)
-    int          lastDuty = -1;     // dernière demande brute du plugin
+    int          desired = -1;
+    int          applied = -1;
+    int          floorLevel = 0;
+    int          lastDuty = -1;
     bool         touched = false;
     bool         failLogged = false;
     bool         rpmLogged = false;
@@ -66,7 +65,7 @@ struct NvmlFan::Impl {
 
     Gpu* find(const QString& id, bool* isFan = nullptr)
     {
-        const QStringList p = id.split(QLatin1Char('/'));   // "nvml/<n>/control|fan"
+        const QStringList p = id.split(QLatin1Char('/'));
         if (p.size() != 3 || p[0] != QLatin1String("nvml")) return nullptr;
         bool ok = false;
         const int n = p[1].toInt(&ok);
@@ -75,10 +74,6 @@ struct NvmlFan::Impl {
         return &gpus[n];
     }
 
-    // Écrit max(desired, plancher thermique) sur tous les ventilateurs. N'écrit que si
-    // la valeur change. Appelée à chaque setDuty ET à chaque lecture RPM (1 Hz) : le
-    // plancher agit même si la courbe de l'utilisateur ne bouge plus, et retombe quand
-    // la GPU refroidit.
     bool apply(Gpu& g)
     {
         if (g.desired < 0) return true;
@@ -87,7 +82,7 @@ struct NvmlFan::Impl {
         if (fTemp(g.dev, NVML_TEMPERATURE_GPU, &t) == NVML_SUCCESS) {
             level = nvmlFloorLevel(t, g.floorLevel);
         } else {
-            level = std::max(level, 60);       // température illisible : on ne parie pas
+            level = std::max(level, 60);
             if (!g.tempLogged)
                 qWarning() << "[KrakenPump/Fans] NVML: cannot read GPU temperature for"
                            << g.name << "— fan kept at 60 % minimum.";
@@ -112,7 +107,6 @@ struct NvmlFan::Impl {
         return true;
     }
 
-    // Politique automatique sur tous les ventilateurs. true si tout a réussi.
     bool restoreAuto(Gpu& g)
     {
         bool ok = true;
@@ -136,12 +130,9 @@ NvmlFan::~NvmlFan() { shutdown(); }
 bool NvmlFan::init()
 {
 #ifdef _WIN32
-    if (m_d->inited) return !m_channels.isEmpty();   // retry du worker : déjà fait
+    if (m_d->inited) return !m_channels.isEmpty();
 
-    // System32 d'abord (pilote récent), puis le dossier NVSMI historique. Jamais
-    // le répertoire courant : LOAD_LIBRARY_SEARCH_SYSTEM32 / chemin absolu seulement.
 #ifdef NVML_TEST_DLL_PATH
-    // Cible de test uniquement (définie par tests/CMakeLists.txt) : fausse nvml.dll.
     m_d->dll = LoadLibraryA(NVML_TEST_DLL_PATH);
 #else
     m_d->dll = LoadLibraryExW(L"nvml.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -150,7 +141,7 @@ bool NvmlFan::init()
         m_d->dll = LoadLibraryExW(
             L"C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvml.dll", nullptr,
             LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
-    if (!m_d->dll) return false;                      // pas de pilote NVIDIA : normal
+    if (!m_d->dll) return false;
 
     Impl& d = *m_d;
     const bool ok = d.sym(d.fInit, "nvmlInit_v2") && d.sym(d.fShutdown, "nvmlShutdown")
@@ -162,7 +153,7 @@ bool NvmlFan::init()
         && d.sym(d.fSetDef, "nvmlDeviceSetDefaultFanSpeed_v2")
         && d.sym(d.fMinMax, "nvmlDeviceGetMinMaxFanSpeed")
         && d.sym(d.fTemp, "nvmlDeviceGetTemperature");
-    d.sym(d.fFanRpm, "nvmlDeviceGetFanSpeedRPM");     // optionnel (pilotes récents)
+    d.sym(d.fFanRpm, "nvmlDeviceGetFanSpeedRPM");
     if (!ok) {
         qWarning() << "[KrakenPump/Fans] NVML: nvml.dll too old (fan control API missing).";
         shutdown();
@@ -179,7 +170,6 @@ bool NvmlFan::init()
         char nm[96] = {};
         d.fName(g.dev, nm, sizeof(nm));
         g.name = nm[0] ? QString::fromUtf8(nm) : QStringLiteral("NVIDIA GPU");
-        // Pas de ventilateur (laptop, carte passive) ou lecture refusée -> ignorée.
         if (d.fNumFans(g.dev, &g.fans) != NVML_SUCCESS || g.fans == 0) {
             qInfo() << "[KrakenPump/Fans] NVML:" << g.name << "— no controllable fan, skipped.";
             continue;
@@ -197,8 +187,6 @@ bool NvmlFan::init()
     }
     if (d.gpus.isEmpty()) { shutdown(); return false; }
 
-    // Arrêt brutal précédent (OpenRGB tué) : NVML est resté en politique MANUELLE à la
-    // dernière vitesse écrite. Le marqueur dit qu'on en est responsable -> retour auto.
     if (QFile::exists(Impl::markerPath())) {
         bool allOk = true;
         for (Gpu& g : d.gpus) allOk = d.restoreAuto(g) && allOk;
@@ -244,15 +232,14 @@ float NvmlFan::value(const QString& id) const
     if (!g || !m_d->inited) return 0.f;
     if (!isFan) {
         if (g->lastDuty >= 0) return float(g->lastDuty);
-        unsigned pct = 0;                               // pas encore écrit : valeur courante
+        unsigned pct = 0;
         return m_d->fFanPct(g->dev, 0, &pct) == NVML_SUCCESS ? float(pct) : 0.f;
     }
-    // Lue chaque seconde par le worker : sert aussi de garde thermique (cf. apply()).
     if (g->touched) m_d->apply(*g);
     if (m_d->fFanRpm) {
         nvmlFanSpeedInfo_t info{ unsigned(sizeof(nvmlFanSpeedInfo_t)) | (1u << 24), 0, 0 };
         if (m_d->fFanRpm(g->dev, &info) == NVML_SUCCESS)
-            return float(info.speed);                   // vitesse « voulue », pas mesurée
+            return float(info.speed);
     }
     if (!g->rpmLogged) {
         qInfo() << "[KrakenPump/Fans] NVML:" << g->name
@@ -267,8 +254,6 @@ bool NvmlFan::setDuty(const QString& id, int percent)
     Gpu* g = m_d->find(id);
     if (!g || !m_d->inited) return false;
 
-    // Avant la 1re écriture : le marqueur de récupération, puis `touched` — la 1re
-    // SetFanSpeed bascule la GPU en politique manuelle.
     if (!g->touched) {
         if (!gpuFanStateWrite(Impl::markerPath(), QByteArray("manual\n")))
             qWarning() << "[KrakenPump/Fans] NVML: cannot write recovery marker"
@@ -298,4 +283,4 @@ void NvmlFan::setDefault(const QString& id)
     }
 }
 
-} // namespace NZXTKrakenPump
+}

@@ -7,8 +7,6 @@
 
 namespace NZXTKrakenPump {
 
-// Interpolation linéaire par morceaux sur les points (°C, %) — plateau avant
-// le premier point et après le dernier (même sémantique que l'éditeur).
 static int interpDuty(const QVector<QPoint>& pts, float t)
 {
     if (pts.isEmpty()) return 50;
@@ -17,7 +15,7 @@ static int interpDuty(const QVector<QPoint>& pts, float t)
     for (int k = 1; k < pts.size(); ++k) {
         if (t <= pts[k].x()) {
             const QPoint a = pts[k - 1], b = pts[k];
-            if (a.x() == b.x())   // marche verticale (points alignés par poussée)
+            if (a.x() == b.x())
                 return b.y();
             return int(std::lround(a.y() + double(b.y() - a.y())
                        * (t - a.x()) / double(b.x() - a.x())));
@@ -26,17 +24,10 @@ static int interpDuty(const QVector<QPoint>& pts, float t)
     return pts.last().y();
 }
 
-// Plage de validité d'une sonde (même règle que le plugin LCD)
 static inline bool tempValid(float t) { return t > 0.f && t < 150.f; }
 
-// Sonde invalide pendant ce nombre de ticks (s) consécutifs -> canal rendu au
-// BIOS + alerte UI. Marge pour l'init lente du driver LHM au démarrage.
 static constexpr int kFaultTicks = 8;
 
-// Table liquide -> duty écrite au Kraken : plate au duty demandé, sauf à partir
-// de kLiquidSafetyC où le firmware applique 100 %. Le firmware conserve la table
-// après fermeture ou crash d'OpenRGB : sans cette garde, pompe et ventilos du
-// Kraken resteraient figés au dernier duty quelle que soit la température.
 static constexpr int kLiquidSafetyC = 50;
 static std::array<uint8_t, 60> krakenTable(int duty)
 {
@@ -46,11 +37,6 @@ static std::array<uint8_t, 60> krakenTable(int duty)
     return t;
 }
 
-// Calibration : balayage descendant 100 % -> 0 % par paliers de 10,
-// échantillonnage quand les RPM se sont STABILISÉS (le ventilo du Kraken suit
-// une rampe interne lente — une durée fixe le mesurait en pleine
-// accélération). Plateau = variation ≤ ~3 % pendant 3 ticks, après un délai
-// minimum ; plafond dur par palier.
 static constexpr int CALIB_DUTIES[]  = { 100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 0 };
 static constexpr int CALIB_STEPS     = int(sizeof(CALIB_DUTIES) / sizeof(int));
 static constexpr int CALIB_MIN_TICKS = 4;
@@ -67,30 +53,19 @@ void PumpWorker::start()
     m_timer->setInterval(1000);
     connect(m_timer, &QTimer::timeout, this, &PumpWorker::tick);
 
-    // Ouvrir le Kraken D'ABORD (rapide, HID) : le nom du device s'affiche
-    // immédiatement, sans attendre l'init LHM (~2-5 s) — même réactivité que
-    // le plugin LCD. À ce stade m_lhwm n'est pas encore prêt : emitFanChannels
-    // ne liste que le canal Kraken, complété après l'init ci-dessous.
     const bool krakenOk = tryOpen();
     if (!krakenOk) {
         emit deviceOpened(QString(), false, false);
-        // Même consigne que le plugin LCD, plus la spécificité pompe : les
-        // canaux carte mère restent pilotables sans Kraken.
         emit statusText(QStringLiteral(
             "Check the USB connection and close NZXT CAM — motherboard fans remain available."));
         m_reopenClock.start();
     }
 
-    // LibreHardwareMonitor : énumération des ventilos carte mère/GPU.
-    // Lent (~2-5 s, ouvre LHM + driver kernel) — on est sur le thread worker.
     m_lhwm.init();
     publishLhwmSources();
 
-    // Course driver : si l'énumération n'a produit aucun canal pilotable, le
-    // driver kernel LHM n'était probablement pas prêt (fréquent juste après
-    // l'ouverture de session). On programme des ré-init périodiques.
     if (m_lhwm.lhwmChannelCount() == 0) {
-        m_lhwmRetriesLeft = 8;    // ~ jusqu'à 64 s (8 s/essai)
+        m_lhwmRetriesLeft = 8;
         m_lhwmRetryTick   = 8;
         qWarning() << "[KrakenPump/Fans] no fan channels at startup — "
                       "will retry LHM init (driver may not be ready yet).";
@@ -101,8 +76,6 @@ void PumpWorker::start()
 
 void PumpWorker::publishLhwmSources()
 {
-    // Sources de température : liquide Kraken + sondes LHM (CPU/GPU).
-    // Reconstruit m_srcIds à zéro (appelable après une ré-init LHM).
     m_srcIds.clear();
     QStringList srcNames;
     m_srcIds << QStringLiteral("liquid");
@@ -112,14 +85,13 @@ void PumpWorker::publishLhwmSources()
         srcNames << t.name;
     }
     emit tempSourcesReady(m_srcIds, srcNames);
-    emitFanChannels();   // re-liste avec les canaux LHM (carte mère/GPU)
+    emitFanChannels();
 }
 
 void PumpWorker::stop()
 {
     if (m_timer) { m_timer->stop(); m_timer = nullptr; }
 
-    // Failsafe : rendre au BIOS/auto tous les canaux LHM qu'on a pilotés.
     for (const QString& id : m_managed) {
         m_lhwm.setDefault(id);
         qInfo() << "[KrakenPump/Fans] control returned to BIOS:" << id;
@@ -141,7 +113,7 @@ void PumpWorker::emitFanChannels()
     }
     for (const auto& ch : m_lhwm.channels()) {
         if (m_pumpTachChannels.contains(ch.id))
-            continue;   // tachymètre de la pompe Kraken : masqué (rendu au BIOS)
+            continue;
         ids << ch.id;
         names << ch.name;
         groups << ch.hw;
@@ -160,11 +132,9 @@ bool PumpWorker::tryOpen()
     m_failCount     = 0;
     m_reopenDelayMs = 3000;
     m_krakenHasFan  = hasFan;
-    m_lastDuty.remove(KRAKEN_FAN_ID);    // forcer une ré-écriture après reconnexion
+    m_lastDuty.remove(KRAKEN_FAN_ID);
     m_lastDuty.remove(KRAKEN_PUMP_ID);
     emit deviceOpened(m_device->displayName(), true, hasFan);
-    // Pas de "Connected" transitoire (comme le plugin LCD) : la ligne de statut
-    // passe directement aux relevés live au premier tick.
     emitFanChannels();
     return true;
 }
@@ -172,9 +142,8 @@ bool PumpWorker::tryOpen()
 void PumpWorker::setFanConfig(QString id, FanChannelConfig cfg)
 {
     m_fanCfg[id] = cfg;
-    m_lastDuty.remove(id);     // forcer une écriture au prochain tick
-    m_smoothTemp.remove(id);   // la sonde a pu changer : repartir de la valeur
-                               // brute, pas de l'EMA de l'ancienne sonde
+    m_lastDuty.remove(id);
+    m_smoothTemp.remove(id);
 }
 
 void PumpWorker::presetPumpTachChannels(const QStringList& ids)
@@ -185,16 +154,13 @@ void PumpWorker::presetPumpTachChannels(const QStringList& ids)
 
 void PumpWorker::releaseChannel(QString id)
 {
-    // L'UI a masqué ce canal : on cesse de le piloter. m_fanCfg vidé -> la
-    // boucle de courbe ne l'itère plus ; s'il était piloté (LHM), on le rend
-    // au BIOS. Réversible : « Show » repousse la config (setFanConfig).
     m_fanCfg.remove(id);
     if (m_managed.remove(id))
         m_lhwm.setDefault(id);
     m_lastDuty.remove(id);
     m_smoothTemp.remove(id);
     m_forceWrite.remove(id);
-    m_srcBadStreak.remove(id);   // sinon un Show re-fauterait au 1er tick invalide
+    m_srcBadStreak.remove(id);
     m_identifyUntil.remove(id);
 }
 
@@ -216,10 +182,10 @@ void PumpWorker::calibrate()
 void PumpWorker::identify(QString id)
 {
     if (m_calibActive)
-        return;   // 100 % forcé fausserait l'échantillonnage RPM du palier
+        return;
     if (!m_upClock.isValid()) m_upClock.start();
     m_identifyUntil[id] = m_upClock.elapsed() + 5000;
-    m_lastDuty.remove(id);   // écrire 100 % dès le prochain tick
+    m_lastDuty.remove(id);
     qInfo() << "[KrakenPump/Fans] identify:" << id;
 }
 
@@ -232,10 +198,6 @@ float PumpWorker::sourceTemp(const QString& id) const
 
 void PumpWorker::fanTick()
 {
-    // Valeurs des sources de température (curseur live de l'éditeur).
-    // Lues UNE fois par tick et mises en cache : chaque GetSensorValue LHM
-    // déclenche un Hardware.Update() côté .NET — sans cache, 7 canaux sur la
-    // même sonde CPU = 7 updates redondants par seconde.
     QVector<float> vals;
     QHash<QString, float> tickTemp;
     vals.reserve(m_srcIds.size());
@@ -247,16 +209,9 @@ void PumpWorker::fanTick()
     }
     emit tempValues(m_srcIds, vals);
 
-    // RPM + duty par canal — et détection des headers vides : duty envoyé
-    // (>= 20 % : le preset Silent tourne à ~20 % au repos, il faut pouvoir
-    // juger même à froid ; un ventilo zero-RPM à 0 % n'est jamais jugé) mais
-    // 0 RPM pendant 15 s consécutives -> canal masqué. Le seuil bas est
-    // compensé par la durée : un vrai ventilo calé à 20 % finit par tourner
-    // au premier passage >= 30 %, et tout RPM ré-affiche le canal.
     QStringList ids;
     QVector<int> rpms, duties;
-    QHash<QString, int> tickRpm;   // RPM lus une fois/tick (réutilisés par la
-                                   // calibration — chaque value() = 1 update .NET)
+    QHash<QString, int> tickRpm;
     bool channelsChanged = false;
     if (m_krakenHasFan) {
         ids << KRAKEN_FAN_ID;
@@ -269,11 +224,6 @@ void PumpWorker::fanTick()
         const int duty = int(std::lround(m_lhwm.value(ch.id)));
         tickRpm.insert(ch.id, rpm);
 
-        // Header dont le tachymètre est celui de la pompe Kraken (câble tach
-        // des AIO sur CPU_FAN) : RPM collé (±2 %) au RPM pompe pendant 15 s
-        // (même délai que les headers vides -> comportement homogène) ->
-        // masqué et rendu au BIOS (le PWM de ce header ne pilote rien).
-        // Divergence prolongée (ventilo réel branché) -> ré-affiché.
         if (!ch.rpmId.isEmpty() && !m_calibActive && m_pumpRpm > 500) {
             const int  tol   = std::max(40, m_pumpRpm / 50);
             const bool match = (rpm > 0 && std::abs(rpm - m_pumpRpm) <= tol);
@@ -301,8 +251,7 @@ void PumpWorker::fanTick()
                 if (d >= 10) {
                     m_pumpTachDiverge.remove(ch.id);
                     m_pumpTachChannels.remove(ch.id);
-                    m_lastDuty.remove(ch.id);   // forcer la ré-écriture (le canal
-                                                // était rendu au BIOS : reprendre)
+                    m_lastDuty.remove(ch.id);
                     qInfo() << "[KrakenPump/Fans] channel no longer follows the"
                                " pump RPM — back alive:" << ch.id;
                     channelsChanged = true;
@@ -314,10 +263,6 @@ void PumpWorker::fanTick()
             }
         }
 
-        // Masquage des prises vides : plus de détection auto par RPM (trop de
-        // faux positifs + spin-up). L'utilisateur masque les canaux inutilisés
-        // manuellement côté UI (persisté). Le worker liste TOUT (sauf tach
-        // pompe), l'UI filtre.
         if (m_pumpTachChannels.contains(ch.id))
             continue;
         ids << ch.id;
@@ -328,8 +273,6 @@ void PumpWorker::fanTick()
     if (channelsChanged)
         emitFanChannels();
 
-    // Écriture d'un duty sur un canal (kraken = courbe plate, sinon LHM).
-    // Retourne true si l'écriture a réellement eu lieu.
     auto writeDuty = [this](const QString& id, int duty) -> bool {
         if (id == KRAKEN_FAN_ID) {
             if (!m_krakenHasFan || !m_device->isOpen()) return false;
@@ -338,9 +281,8 @@ void PumpWorker::fanTick()
             if (!m_device->isOpen()) return false;
             if (!m_device->setCurve(Channel::Pump, krakenTable(duty))) return false;
         } else {
-            m_managed.insert(id);   // rendu au BIOS au stop, même si l'écriture échoue
+            m_managed.insert(id);
             if (!m_lhwm.setDuty(id, duty)) {
-                // m_lastDuty inchangé : nouvelle tentative au tick suivant
                 static int s_err = 0;
                 if (s_err++ < 5)
                     qWarning() << "[KrakenPump/Fans] setDuty failed:" << id << duty;
@@ -355,15 +297,7 @@ void PumpWorker::fanTick()
     if (!m_upClock.isValid()) m_upClock.start();
     const qint64 nowMs = m_upClock.elapsed();
 
-    // ── Calibration : balayage 100 % -> 0 % (pas de 10) sur les ventilos ────
-    // RPM échantillonné à chaque palier une fois stabilisé ; le RPM à 100 %
-    // devient la référence du % réel affiché, un canal insensible au duty est
-    // masqué (tach externe). La pompe n'est pas calibrée : sa courbe tourne.
     if (m_calibActive) {
-        // Seuls les canaux CONFIGURÉS (m_fanCfg) sont calibrés : un canal
-        // masqué (releaseChannel) n'a pas de config — le balayer le laisserait
-        // épinglé au dernier duty (0 %) car la boucle de courbe ne le rendrait
-        // jamais au BIOS après la calibration.
         QStringList calibIds;
         if (m_krakenHasFan && m_fanCfg.contains(KRAKEN_FAN_ID))
             calibIds << KRAKEN_FAN_ID;
@@ -377,13 +311,11 @@ void PumpWorker::fanTick()
             if (m_lastDuty.value(id, -1) != duty)
                 writeDuty(id, duty);
 
-        if (m_calibSpinStep != m_calibStep) {   // nouveau palier -> anim UI
+        if (m_calibSpinStep != m_calibStep) {
             m_calibSpinStep = m_calibStep;
             emit calibrationSpin(calibIds, duty);
         }
 
-        // RPM courants (cache du tick) + test de plateau : tous les canaux
-        // stables (≤ ~3 %) pendant 3 ticks consécutifs, ou plafond de palier.
         QMap<QString, int> cur;
         for (const QString& id : calibIds)
             cur.insert(id, tickRpm.value(id, 0));
@@ -413,31 +345,24 @@ void PumpWorker::fanTick()
                 finishCalibration();
         }
         if (m_calibActive) {
-            // Avancement : palier courant + fraction du plateau en cours.
             const qreal frac = std::min(1.0, m_calibTicks / qreal(CALIB_MIN_TICKS + 3));
             emit calibrationProgress(
                 std::min(99, int(100.0 * (m_calibStep + frac) / CALIB_STEPS)));
         }
     }
 
-    // ── Identify : 100 % pendant 2 s, prioritaire sur tout le reste ─────────
     for (auto it = m_identifyUntil.begin(); it != m_identifyUntil.end(); ) {
         const QString id = it.key();
         if (nowMs < it.value()) {
-            // Pendant une calibration, ne pas lutter contre ses duties
             if (!m_calibActive && m_lastDuty.value(id, -1) != 100)
                 writeDuty(id, 100);
             ++it;
             continue;
         }
-        // Fin : la boucle de courbe reprend la main au tick suivant.
         it = m_identifyUntil.erase(it);
         m_lastDuty.remove(id);
     }
 
-
-    // ── Application des courbes (boucle logicielle) ──────────────────────────
-    // Canaux dont la sonde est absente ce tick (rendus au BIOS + alerte UI).
     QStringList faultIds, faultReasons;
     const auto faultReason = [this](const QString& sid) -> QString {
         if (sid.isEmpty())
@@ -457,31 +382,26 @@ void PumpWorker::fanTick()
         const QString& id = it.key();
         const FanChannelConfig& cfg = it.value();
         if (m_identifyUntil.contains(id)) {
-            const int li = m_lastFaultIds.indexOf(id);   // conserver l'alerte
+            const int li = m_lastFaultIds.indexOf(id);
             if (li >= 0) { faultIds << id; faultReasons << m_lastFaultReasons.value(li); }
             continue;
         }
         if (m_pumpTachChannels.contains(id))
-            continue;   // header = tach pompe, PWM rendu au BIOS
+            continue;
         if (m_calibActive && id != KRAKEN_PUMP_ID)
-            continue;   // calibration en cours : elle tient les duties
+            continue;
 
-        // Température lissée par EMA (anti-oscillation quand la temp vibre
-        // autour d'un point de courbe). Une sonde morte (0 °C LHM, liquide
-        // figé après déconnexion) n'est jamais utilisée pour piloter.
         const auto cached = tickTemp.constFind(cfg.sourceId);
         const float raw = (cached != tickTemp.constEnd()) ? cached.value()
                                                           : sourceTemp(cfg.sourceId);
         if (!tempValid(raw)) {
             m_smoothTemp.remove(id);
-            // "liquid" inclus : Kraken perdu = sonde liquide absente ; un
-            // ventilo carte mère piloté sur le liquide doit revenir au BIOS.
             const int n = m_srcBadStreak.value(id, 0) + 1;
             m_srcBadStreak.insert(id, n);
             if (n >= kFaultTicks) {
                 faultIds << id;
                 faultReasons << faultReason(cfg.sourceId);
-                if (m_managed.remove(id)) {   // rendre au BIOS une seule fois
+                if (m_managed.remove(id)) {
                     m_lhwm.setDefault(id);
                     m_lastDuty.remove(id);
                     m_forceWrite.remove(id);
@@ -489,14 +409,14 @@ void PumpWorker::fanTick()
             }
             continue;
         }
-        m_srcBadStreak.remove(id);   // sonde revenue : reset streak
+        m_srcBadStreak.remove(id);
         float t;
         auto st = m_smoothTemp.find(id);
         if (st == m_smoothTemp.end()) {
             m_smoothTemp.insert(id, raw);
             t = raw;
         } else {
-            st.value() += 0.4f * (raw - st.value());   // EMA, ~5 s de réponse
+            st.value() += 0.4f * (raw - st.value());
             t = st.value();
         }
 
@@ -505,19 +425,14 @@ void PumpWorker::fanTick()
         const bool isPump = (id == KRAKEN_PUMP_ID);
         const int  last   = m_lastDuty.value(id, -1);
 
-        // Seuil zero-RPM : sous ce duty le ventilo est coupé (0 %). Seul seuil
-        // manuel (cfg.zeroBelow) ; sinon seuil mesuré à la calibration ; sinon
-        // AUCUN plancher (0) — la courbe est suivie telle quelle, l'utilisateur
-        // choisit lui-même son point de coupure.
         const int dutyFloor = (cfg.zeroBelow > 0) ? cfg.zeroBelow
                             : (cfg.startDuty > 0) ? cfg.startDuty : 0;
         if (isPump) {
-            target = std::max(target, 20);   // plancher sécurité pompe
+            target = std::max(target, 20);
         } else if (target > 0 && target < dutyFloor) {
             target = 0;
         }
 
-        // Rampes par canal : montée/descente plafonnées en %/s (tick = 1 s)
         if (last >= 0) {
             if (target > last)
                 target = std::min(target, last + std::max(1, cfg.riseRate));
@@ -525,12 +440,10 @@ void PumpWorker::fanTick()
                 target = std::max(target, last - std::max(1, cfg.fallRate));
         }
 
-        // Ré-écriture forcée (quirk Elite V2) : renvoyer même un duty inchangé
         const bool force = m_forceWrite.contains(id);
         if (!force) {
             if (last == target)
                 continue;
-            // Deadband ±1 % : ignore les variations résiduelles (hors extrêmes)
             if (last >= 0 && std::abs(target - last) <= 1
                     && target != 0 && target != 100)
                 continue;
@@ -539,17 +452,13 @@ void PumpWorker::fanTick()
         writeDuty(id, target);
     }
 
-    if (faultIds != m_lastFaultIds) {   // émettre seulement au changement
+    if (faultIds != m_lastFaultIds) {
         m_lastFaultIds = faultIds;
         m_lastFaultReasons = faultReasons;
         emit fanSensorFault(faultIds, faultReasons);
     }
 }
 
-// Fin de calibration : chaque canal a une table (duty, rpm) sur tout le
-// balayage. RPM insensible au duty (100 % ≈ 0 %) = tachymètre externe (pompe)
-// -> masqué + rendu au BIOS. Sinon la table est émise au widget (base du %
-// réel affiché : % = interp inverse RPM->duty).
 void PumpWorker::finishCalibration()
 {
     m_calibActive = false;
@@ -557,13 +466,12 @@ void PumpWorker::finishCalibration()
     bool tachChanged = false;
     for (auto it = m_calibTable.constBegin(); it != m_calibTable.constEnd(); ++it) {
         const QString&          id  = it.key();
-        const QVector<QPoint>&  tbl = it.value();   // (duty, rpm), duty décroissant
+        const QVector<QPoint>&  tbl = it.value();
         int rpmHigh = 0, rpmLow = 1 << 30;
         for (const QPoint& p : tbl) {
             rpmHigh = std::max(rpmHigh, p.y());
             rpmLow  = std::min(rpmLow,  p.y());
         }
-        // Insensible au duty : amplitude RPM < 10 % du max -> tach externe
         if (id != KRAKEN_FAN_ID && rpmHigh > 0
                 && (rpmHigh - rpmLow) < std::max(60, rpmHigh / 10)) {
             m_pumpTachChannels.insert(id);
@@ -586,19 +494,13 @@ void PumpWorker::finishCalibration()
         emit pumpTachChannelsChanged(QStringList(m_pumpTachChannels.values()));
         emitFanChannels();
     }
-    // Reprise des courbes au tick suivant : m_lastDuty = duty de calibration,
-    // les rampes redescendent naturellement.
-    emit calibrationSpin(QStringList(), 0);   // arrêt anim pales
+    emit calibrationSpin(QStringList(), 0);
     emit calibrationProgress(100);
     emit calibrationFinished(tables);
     qInfo() << "[KrakenPump/Fans] calibration finished —" << tables.size()
             << "fan(s) measured";
 }
 
-// Ré-init LHM différée : le driver kernel peut n'être prêt qu'après l'ouverture
-// de session. init() est lent (~2-5 s) et bloque ce thread — appelé en FIN de
-// tick (après le relevé pompe, déjà émis) et espacé, pour ne pas figer le
-// statut. Jamais pendant une calibration.
 void PumpWorker::maybeRetryLhwm()
 {
     if (m_lhwmRetriesLeft <= 0 || m_calibActive)
@@ -631,13 +533,6 @@ void PumpWorker::tick()
             m_krakenFanDuty = r.fanDuty;
             emit readings(r.liquidTemp, r.pumpRPM, r.pumpDuty, r.fanRPM, r.fanDuty);
 
-            // Quirk Elite V2 : le device se remet parfois seul à 0 % après une
-            // commande. Si le duty rapporté diverge de ce qu'on a écrit,
-            // marquer le canal pour ré-écriture — SANS toucher m_lastDuty,
-            // qui sert aussi de base aux rampes et au zero-RPM (l'effacer
-            // faisait sauter la limitation de pente sur un simple retard de
-            // rapport du device).
-            // Liquide >= kLiquidSafetyC : la table impose 100 % (pas une dérive).
             const bool hot = r.liquidTemp >= kLiquidSafetyC;
             const auto expected = [&](const QString& id) {
                 return hot ? 100 : m_lastDuty.value(id);
@@ -649,17 +544,14 @@ void PumpWorker::tick()
                     && r.fanDuty != expected(KRAKEN_FAN_ID))
                 m_forceWrite.insert(KRAKEN_FAN_ID);
         } else if (++m_failCount >= 3) {
-            // Device décroché (déconnexion, veille…) : fermer et re-sonder
             qWarning() << "[KrakenPump/Worker] status read failed 3× — device lost.";
             m_device->close();
             m_failCount     = 0;
             m_reopenDelayMs = 3000;
             m_reopenClock.start();
             m_krakenHasFan  = false;
-            m_liquidTemp    = 0.f;   // invalide la source "liquid" (garde fanTick)
-            m_pumpRpm       = 0;     // stoppe la détection tach pompe
-            // Calibration en cours : l'abandonner (le ventilo Kraken n'est plus
-            // mesurable) et réactiver le bouton — l'utilisateur relancera.
+            m_liquidTemp    = 0.f;
+            m_pumpRpm       = 0;
             if (m_calibActive) {
                 m_calibActive = false;
                 m_calibTable.clear();
@@ -673,24 +565,23 @@ void PumpWorker::tick()
             emitFanChannels();
         }
         fanTick();
-        maybeRetryLhwm();   // en fin de tick : le statut pompe est déjà émis
+        maybeRetryLhwm();
         return;
     }
 
-    fanTick();   // les ventilos LHM restent pilotés même sans Kraken
+    fanTick();
     maybeRetryLhwm();
 
-    // Pas de device : sondage throttlé + backoff quand présent mais non ouvrable
     if (m_reopenClock.isValid() && m_reopenClock.elapsed() < m_reopenDelayMs)
         return;
     m_reopenClock.start();
 
     if (!KrakenPumpDevice::anySupportedPresent()) {
-        m_reopenDelayMs = 3000;   // absent : re-sonder tranquillement
+        m_reopenDelayMs = 3000;
         return;
     }
     if (!tryOpen())
         m_reopenDelayMs = std::min(m_reopenDelayMs * 2, 30000);
 }
 
-} // namespace NZXTKrakenPump
+}

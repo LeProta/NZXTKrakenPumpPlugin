@@ -8,7 +8,6 @@
 
 namespace NZXTKrakenPump {
 
-// Accent violet de la charte du plugin LCD (bouton Rotate : #AA44FF)
 static const QColor ACCENT(0xAA, 0x44, 0xFF);
 
 PumpCurveEditor::PumpCurveEditor(QWidget* parent)
@@ -28,8 +27,6 @@ void PumpCurveEditor::setPoints(const QVector<QPoint>& pts)
     }
     std::stable_sort(m_pts.begin(), m_pts.end(),
                      [](const QPoint& a, const QPoint& b) { return a.x() < b.x(); });
-    // Températures identiques (anciennes configs) : décaler de +1 °C plutôt
-    // que supprimer — pas de perte de points ; on ne retire qu'en butée d'axe.
     for (int i = 1; i < m_pts.size(); ++i)
         if (m_pts[i].x() <= m_pts[i - 1].x())
             m_pts[i].setX(std::min(m_pts[i - 1].x() + 1, TEMP_MAX));
@@ -67,8 +64,6 @@ void PumpCurveEditor::setFahrenheit(bool on)
 
 QRectF PumpCurveEditor::plotRect() const
 {
-    // Colonne de gauche compacte (libellés %) ; marge droite paramétrable
-    // (72 = symétrique, réduite quand des contrôles occupent la droite).
     return QRectF(46, 10, width() - 46 - m_marginRight, height() - 48);
 }
 
@@ -93,7 +88,7 @@ QPoint PumpCurveEditor::fromWidget(const QPointF& w) const
 int PumpCurveEditor::handleAt(const QPoint& pos) const
 {
     int best = -1;
-    qreal bestDist = 12.0;   // rayon de capture
+    qreal bestDist = 12.0;
     for (int i = 0; i < m_pts.size(); ++i) {
         const QPointF p = toWidget(m_pts[i]);
         const qreal d = std::hypot(p.x() - pos.x(), p.y() - pos.y());
@@ -106,7 +101,6 @@ void PumpCurveEditor::dragTo(int index, const QPoint& mouse)
 {
     QPoint p = fromWidget(mouse);
 
-    // Mode Fixed : 2 points liés au même duty, X verrouillé (0° / 100°).
     if (m_fixedMode && m_pts.size() == 2) {
         const int y = p.y();
         if (m_pts[0].y() == y && m_pts[1].y() == y) return;
@@ -117,8 +111,6 @@ void PumpCurveEditor::dragTo(int index, const QPoint& mouse)
         return;
     }
 
-    // Température (X) : BLOQUÉE par les voisins (1 °C d'écart minimum) —
-    // les points restent triés, pas de poussée sur cet axe.
     if (index > 0)
         p.setX(std::max(p.x(), m_pts[index - 1].x() + 1));
     if (index < m_pts.size() - 1)
@@ -127,11 +119,6 @@ void PumpCurveEditor::dragTo(int index, const QPoint& mouse)
     bool changed = (m_pts[index] != p);
     m_pts[index] = p;
 
-    // Duty (Y) : POUSSÉE avec mémoire de geste — chaque voisin vaut
-    // min/max(son duty au début du drag, duty du point manipulé) : il suit
-    // quand on le traverse, et reprend sa position d'origine (jamais plus)
-    // si on repart en arrière SANS relâcher. Au relâchement, les positions
-    // courantes deviennent les nouvelles origines du prochain geste.
     const bool hasOrigin = (m_originY.size() == m_pts.size());
     for (int i = index - 1; i >= 0; --i) {
         const int base = hasOrigin ? m_originY[i] : m_pts[i].y();
@@ -154,7 +141,6 @@ void PumpCurveEditor::mousePressEvent(QMouseEvent* e)
     const int hit = handleAt(e->pos());
 
     if (e->button() == Qt::RightButton) {
-        // Clic droit : suppression (toujours garder au moins 2 points)
         if (hit >= 0 && m_pts.size() > 2) {
             m_pts.removeAt(hit);
             m_dragging = -1;
@@ -166,7 +152,6 @@ void PumpCurveEditor::mousePressEvent(QMouseEvent* e)
 
     if (e->button() != Qt::LeftButton) return;
 
-    // Origines du geste : duty de chaque point à l'instant du clic
     const auto snapshotOrigins = [this] {
         m_originY.resize(m_pts.size());
         for (int i = 0; i < m_pts.size(); ++i)
@@ -180,13 +165,12 @@ void PumpCurveEditor::mousePressEvent(QMouseEvent* e)
         return;
     }
 
-    // Clic gauche dans le vide : ajout d'un point (si la température est libre)
     const QRectF r = plotRect();
     if (!r.adjusted(-10, -10, 10, 10).contains(e->pos()))
         return;
     const QPoint p = fromWidget(e->pos());
     for (const QPoint& q : m_pts)
-        if (q.x() == p.x()) return;   // température déjà occupée
+        if (q.x() == p.x()) return;
 
     int insertAt = m_pts.size();
     for (int i = 0; i < m_pts.size(); ++i)
@@ -194,8 +178,6 @@ void PumpCurveEditor::mousePressEvent(QMouseEvent* e)
     m_pts.insert(insertAt, p);
     m_dragging = insertAt;
     snapshotOrigins();
-    // Pousser immédiatement les voisins au niveau du nouveau point (la courbe
-    // doit rester monotone dès le clic, pas seulement au premier mouvement).
     for (int i = insertAt - 1; i >= 0; --i)
         if (m_pts[i].y() > p.y()) m_pts[i].setY(p.y());
     for (int i = insertAt + 1; i < m_pts.size(); ++i)
@@ -213,7 +195,7 @@ void PumpCurveEditor::mouseMoveEvent(QMouseEvent* e)
 void PumpCurveEditor::mouseReleaseEvent(QMouseEvent*)
 {
     m_dragging = -1;
-    m_originY.clear();   // les positions courantes deviennent les origines
+    m_originY.clear();
 }
 
 void PumpCurveEditor::paintEvent(QPaintEvent*)
@@ -223,8 +205,6 @@ void PumpCurveEditor::paintEvent(QPaintEvent*)
 
     const QRectF r = plotRect();
 
-    // Couleurs dérivées de la palette de l'application (OpenRGB sombre/clair),
-    // même approche que LCDPreviewWidget du plugin LCD.
     const QColor plotBg = palette().color(QPalette::Base);
     QColor grid = palette().color(QPalette::Mid);
     grid.setAlpha(110);
@@ -233,7 +213,6 @@ void PumpCurveEditor::paintEvent(QPaintEvent*)
 
     p.fillRect(r, plotBg);
 
-    // Grille + libellés
     QFont f = p.font();
     f.setPixelSize(10);
     p.setFont(f);
@@ -259,8 +238,6 @@ void PumpCurveEditor::paintEvent(QPaintEvent*)
 
     if (m_pts.isEmpty()) return;
 
-    // Courbe : plateau avant le premier point, segments, plateau après le
-    // dernier (même sémantique que l'interpolation envoyée au device).
     QPainterPath curve;
     curve.moveTo(QPointF(r.left(), toWidget(m_pts.first()).y()));
     for (const QPoint& pt : m_pts)
@@ -278,7 +255,6 @@ void PumpCurveEditor::paintEvent(QPaintEvent*)
     p.setPen(QPen(ACCENT, 2));
     p.drawPath(curve);
 
-    // Curseur température live
     if (m_liveTemp >= TEMP_MIN) {
         const qreal fx = std::clamp(qreal(m_liveTemp - TEMP_MIN)
                                     / (TEMP_MAX - TEMP_MIN), qreal(0), qreal(1));
@@ -287,8 +263,6 @@ void PumpCurveEditor::paintEvent(QPaintEvent*)
         p.drawLine(QPointF(x, r.top()), QPointF(x, r.bottom()));
     }
 
-    // Guides du point en cours de déplacement : lignes verticale + horizontale
-    // et valeurs (% à gauche, ° en bas) au niveau du point.
     if (m_dragging >= 0 && m_dragging < m_pts.size()) {
         const QPoint  cur = m_pts[m_dragging];
         const QPointF w   = toWidget(cur);
@@ -301,8 +275,6 @@ void PumpCurveEditor::paintEvent(QPaintEvent*)
         bf.setBold(true);
         p.setFont(bf);
 
-        // Valeur % : même colonne que les libellés fixes, sur une pastille de
-        // fond pour masquer un éventuel libellé de grille en dessous.
         {
             const QRectF pr(6, w.y() - 8, 38, 16);
             p.setPen(Qt::NoPen);
@@ -314,7 +286,6 @@ void PumpCurveEditor::paintEvent(QPaintEvent*)
                        QString::number(cur.y()) + QStringLiteral("%"));
         }
 
-        // Température : rangée dédiée SOUS les degrés fixes de l'axe
         const int shown = m_fahrenheit ? cur.x() * 9 / 5 + 32 : cur.x();
         p.drawText(QRectF(w.x() - 16, r.bottom() + 20, 32, 14),
                    Qt::AlignCenter,
@@ -324,7 +295,6 @@ void PumpCurveEditor::paintEvent(QPaintEvent*)
         p.setFont(bf);
     }
 
-    // Poignées : contour noir en thème sombre, blanc (BrightText) en clair
     const bool   darkTheme = palette().color(QPalette::Window).lightness() < 128;
     const QColor handleBorder = darkTheme ? QColor(Qt::black)
                                           : palette().color(QPalette::BrightText);
@@ -336,4 +306,4 @@ void PumpCurveEditor::paintEvent(QPaintEvent*)
     }
 }
 
-} // namespace NZXTKrakenPump
+}

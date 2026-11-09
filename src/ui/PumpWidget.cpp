@@ -40,15 +40,12 @@
 
 namespace NZXTKrakenPump {
 
-// Libellé "muet" (statut, RPM) : même style que le plugin LCD.
 static QString statusLabelStyle(bool dark)
 {
     return QString("color:%1;font-size:11px;font-family:monospace;")
            .arg(dark ? "#aaa" : "#666");
 }
 
-// Nom de canal renommable : QLineEdit "invisible" (double-clic pour éditer).
-// Police posée via QFont (pas la stylesheet) pour que fontMetrics() soit juste.
 static QString nameEditStyle(const QColor& c = QColor())
 {
     const QString col = c.isValid() ? QStringLiteral("color:%1;").arg(c.name())
@@ -56,14 +53,10 @@ static QString nameEditStyle(const QColor& c = QColor())
     return QStringLiteral("QLineEdit{background:transparent;border:none;%1}").arg(col);
 }
 
-// Orange d'alerte (nom + icône + triangle) quand une sonde du canal est absente.
 static const QColor kSensorWarn(0xE6, 0x7E, 0x22);
 
-// Vitesse de rotation des pales au duty plein (°/s) — palier identify/calib 100 %.
 static constexpr qreal kSpinMax = 1000.0;
 
-// Triangle d'alerte peint (pas d'emoji : le glyph système ⚠ a un padding
-// interne large impossible à coller au texte).
 static QPixmap makeWarnIcon(int px)
 {
     QPixmap pm(px, px);
@@ -78,7 +71,7 @@ static QPixmap makeWarnIcon(int px)
     tri.closeSubpath();
     p.fillPath(tri, kSensorWarn);
     p.setPen(Qt::NoPen);
-    p.setBrush(Qt::white);   // point d'exclamation
+    p.setBrush(Qt::white);
     const qreal cx = px / 2.0;
     p.drawRoundedRect(QRectF(cx - px * 0.05, px * 0.36, px * 0.10, px * 0.28),
                       px * 0.05, px * 0.05);
@@ -86,15 +79,12 @@ static QPixmap makeWarnIcon(int px)
     return pm;
 }
 
-// Largeur ajustée au texte : sans ça le QLineEdit avale toute la rangée et
-// intercepte les clics destinés au repli/dépli du panneau.
 static void fitNameWidth(QLineEdit* le)
 {
     const int w = le->fontMetrics().horizontalAdvance(le->text()) + 2;
     le->setFixedWidth(std::max(w, 40));
 }
 
-// Bloc hardware : cadre discret, fond transparent (suit le thème OpenRGB).
 static QString groupFrameStyle(bool dark)
 {
     return QString("QFrame#groupBlock{border:1px solid %1;border-radius:6px;}")
@@ -107,7 +97,6 @@ static QString separatorStyle(bool dark)
            .arg(dark ? "#2A2A2E" : "#E0E0E4");
 }
 
-// Bouton ✕ « masquer ce canal » : discret, rouge au survol.
 static QString hideButtonStyle(bool dark)
 {
     return QString("QPushButton{border:1px solid %1;border-radius:4px;"
@@ -117,8 +106,6 @@ static QString hideButtonStyle(bool dark)
            .arg(dark ? "#3A3A3E" : "#C8C8CC", dark ? "#999" : "#777");
 }
 
-// Icône carrée 28×28 du type de canal (pompe / ventilateur / GPU).
-// `angle` : rotation des pales (animation pendant Identify).
 static QPixmap makeChannelIcon(int type, bool dark, qreal angle = 0.0,
                                const QColor& fgOverride = QColor())
 {
@@ -130,8 +117,6 @@ static QPixmap makeChannelIcon(int type, bool dark, qreal angle = 0.0,
     const QColor fg     = fgOverride.isValid() ? fgOverride
                         : dark ? QColor(0xE6, 0xE6, 0xEA) : QColor(0x2A, 0x2A, 0x2E);
 
-    // Silhouette pleine : cadre carré arrondi troué d'un cercle (style visserie
-    // aux coins), détails découpés en transparence.
     const auto drawFrame = [&](qreal holeR) {
         QPainterPath frame;
         frame.setFillRule(Qt::OddEvenFill);
@@ -151,7 +136,7 @@ static QPixmap makeChannelIcon(int type, bool dark, qreal angle = 0.0,
     };
 
     switch (type) {
-    case 0: {   // Pompe : cadre + grande face circulaire pleine (anneau creux)
+    case 0: {
         drawFrame(10.6);
         p.setPen(Qt::NoPen);
         p.setBrush(fg);
@@ -159,8 +144,7 @@ static QPixmap makeChannelIcon(int type, bool dark, qreal angle = 0.0,
         drawScrews();
         break;
     }
-    case 2: {   // GPU : puce (die évidé + 4 broches par côté), même cadre plein que
-                // pompe/ventilo. Statique : pas d'Identify sur la GPU (comme la pompe).
+    case 2: {
         QPainterPath frame;
         frame.setFillRule(Qt::OddEvenFill);
         frame.addRoundedRect(QRectF(1, 1, 26, 26), 5, 5);
@@ -171,12 +155,12 @@ static QPixmap makeChannelIcon(int type, bool dark, qreal angle = 0.0,
         p.drawRoundedRect(QRectF(8.6, 8.6, 10.8, 10.8), 1.6, 1.6);        // die
         p.setCompositionMode(QPainter::CompositionMode_Clear);
         p.setBrush(Qt::black);
-        p.drawRoundedRect(QRectF(11.3, 11.3, 5.4, 5.4), 1.0, 1.0);        // puits central
+        p.drawRoundedRect(QRectF(11.3, 11.3, 5.4, 5.4), 1.0, 1.0);
         p.setCompositionMode(QPainter::CompositionMode_SourceOver);
         QPen pin(fg, 1.4);
         pin.setCapStyle(Qt::FlatCap);
         p.setPen(pin);
-        for (qreal t : { 10.4, 12.8, 15.2, 17.6 }) {                      // 4 broches par côté
+        for (qreal t : { 10.4, 12.8, 15.2, 17.6 }) {
             p.drawLine(QPointF(t, 5.6), QPointF(t, 8.7));
             p.drawLine(QPointF(t, 19.3), QPointF(t, 22.4));
             p.drawLine(QPointF(5.6, t), QPointF(8.7, t));
@@ -184,7 +168,7 @@ static QPixmap makeChannelIcon(int type, bool dark, qreal angle = 0.0,
         }
         drawScrews();
         break;
-    }    default: {  // Ventilateur : cadre + 7 pales incurvées + moyeu annulaire
+    }    default: {
         drawFrame(10.6);
         p.setPen(Qt::NoPen);
         p.setBrush(fg);
@@ -200,9 +184,9 @@ static QPixmap makeChannelIcon(int type, bool dark, qreal angle = 0.0,
             p.drawPath(blade);
             p.restore();
         }
-        p.drawEllipse(QPointF(14, 14), 3.5, 3.5);   // moyeu
+        p.drawEllipse(QPointF(14, 14), 3.5, 3.5);
         p.setCompositionMode(QPainter::CompositionMode_Clear);
-        p.drawEllipse(QPointF(14, 14), 1.5, 1.5);   // centre du moyeu (creux)
+        p.drawEllipse(QPointF(14, 14), 1.5, 1.5);
         p.setCompositionMode(QPainter::CompositionMode_SourceOver);
         drawScrews();
         break;
@@ -211,10 +195,6 @@ static QPixmap makeChannelIcon(int type, bool dark, qreal angle = 0.0,
     return pm;
 }
 
-// Pastille de statut de calibration : rond vert + coche blanche, widget overlay
-// posé À CHEVAL sur le coin haut-droit du bouton "Calibrate fans" (chevauche
-// le contour, moitié dehors — un badge peint dans le bouton serait rogné par
-// son rect). Fond transparent, transparent aux clics (le bouton reçoit tout).
 class CornerBadge : public QWidget {
 public:
     explicit CornerBadge(QWidget* parent) : QWidget(parent)
@@ -230,7 +210,7 @@ protected:
         const QPointF c(width() / 2.0, height() / 2.0);
         const qreal r = 6.0;
         p.setPen(Qt::NoPen);
-        p.setBrush(QColor(0x2E, 0xCC, 0x71));         // vert
+        p.setBrush(QColor(0x2E, 0xCC, 0x71));
         p.drawEllipse(c, r, r);
         QPen check(QColor(Qt::white), 1.6);
         check.setCapStyle(Qt::RoundCap);
@@ -242,10 +222,6 @@ protected:
     }
 };
 
-// Coche blanche pour l'indicateur de case à cocher (état coché). Générée une
-// fois dans le dossier de config puis référencée par url() dans la stylesheet
-// (les data: URIs ne sont pas fiables dans les stylesheets Qt 5). Chemin en
-// slashes avant pour Qt CSS.
 static QString checkMarkImagePath()
 {
     const QString path = OpenRGBSettings::configDir()
@@ -268,8 +244,6 @@ static QString checkMarkImagePath()
     return QDir::fromNativeSeparators(path);
 }
 
-// ─── Presets (calés sur les profils usuels du marché : CAM/FanControl) ──────
-// Pompe : sur température liquide (28-30 °C au repos, ~40 °C en charge)
 static QVector<QPoint> pumpPresetPoints(int mode)
 {
     switch (mode) {
@@ -279,7 +253,6 @@ static QVector<QPoint> pumpPresetPoints(int mode)
     }
 }
 
-// Ventilateurs : sur température CPU/GPU (repos ~40 °C, charge 70-85 °C)
 static QVector<QPoint> fanPresetPoints(int fanMode)
 {
     switch (fanMode) {
@@ -289,17 +262,11 @@ static QVector<QPoint> fanPresetPoints(int fanMode)
     }
 }
 
-// Mode Fixed : duty constant matérialisé par 2 points liés (0° et 100°)
 static QVector<QPoint> fixedPoints(int duty)
 {
     return { QPoint(0, duty), QPoint(100, duty) };
 }
 
-// Seuil de démarrage : duty min de la table de calib où le ventilo tourne
-// encore (rpm > 0). 0 si non calibré / toujours à l'arrêt / seuil non mesuré.
-// On n'accepte le seuil que si un palier INFÉRIEUR l'a vu à l'arrêt (rpm == 0) :
-// une table à 2 points issue d'une ancienne migration (max au 100 %, 0 au 0 %)
-// donnerait sinon un faux seuil de 100 % -> ventilo bloqué éteint sous 100 %.
 static int calibStartDuty(const QVector<QPoint>& table)
 {
     int start = 0, lowestZeroDuty = 101;
@@ -307,20 +274,14 @@ static int calibStartDuty(const QVector<QPoint>& table)
         if (p.y() > 0 && (start == 0 || p.x() < start)) start = p.x();
         if (p.y() == 0 && p.x() < lowestZeroDuty)       lowestZeroDuty = p.x();
     }
-    // Seuil valable seulement si mesuré entre un palier tournant et un palier
-    // arrêté juste en dessous (paliers rapprochés = vrai balayage, pas 100/0).
     if (start > 0 && lowestZeroDuty < start && (start - lowestZeroDuty) <= 15)
         return start;
     return 0;
 }
 
-// % réel d'un ventilo calibré : interpolation inverse RPM courant -> duty sur
-// la table (duty, rpm) mesurée. La table est stockée duty décroissant ; on la
-// parcourt par RPM croissant. Hors plage -> borné à [0, 100].
 static int calibratedPct(const QVector<QPoint>& table, int rpm)
 {
     if (table.size() < 2) return -1;
-    // Bornes par RPM (indépendant de l'ordre de stockage)
     int loRpm = table.first().y(), loDuty = table.first().x();
     int hiRpm = loRpm, hiDuty = loDuty;
     for (const QPoint& p : table) {
@@ -329,7 +290,6 @@ static int calibratedPct(const QVector<QPoint>& table, int rpm)
     }
     if (rpm <= loRpm) return std::clamp(loDuty, 0, 100);
     if (rpm >= hiRpm) return std::clamp(hiDuty, 0, 100);
-    // Segment encadrant : trie implicite par recherche du couple le plus serré
     int bestLoR = loRpm, bestLoD = loDuty, bestHiR = hiRpm, bestHiD = hiDuty;
     for (const QPoint& a : table) {
         if (a.y() <= rpm && a.y() >= bestLoR) { bestLoR = a.y(); bestLoD = a.x(); }
@@ -351,8 +311,6 @@ PumpWidget::PumpWidget(QWidget* parent)
     qRegisterMetaType<FanChannelConfig>("NZXTKrakenPump::FanChannelConfig");
     qRegisterMetaType<QMap<QString, QVector<QPoint>>>("QMap<QString,QVector<QPoint>>");
 
-    // Unité de température : suit la locale/langue OpenRGB (°F si région US),
-    // même système que le plugin LCD.
     m_fahrenheit  = OpenRGBSettings::prefersFahrenheit();
     m_krakenGroup = QStringLiteral("NZXT Kraken");
 
@@ -361,7 +319,6 @@ PumpWidget::PumpWidget(QWidget* parent)
     applyPumpCfgToUi();
     setCalibBadge(!m_calibTables.isEmpty());
 
-    // Thème initial dérivé de la palette OpenRGB
     setDarkTheme(palette().color(QPalette::Window).lightness() < 128);
 
     m_saveTimer = new QTimer(this);
@@ -369,7 +326,6 @@ PumpWidget::PumpWidget(QWidget* parent)
     m_saveTimer->setInterval(500);
     connect(m_saveTimer, &QTimer::timeout, this, [this] { saveConfig(); });
 
-    // Vérification de mise à jour (GitHub releases/latest), asynchrone.
     m_updater = new UpdateChecker(this);
     connect(m_updater, &UpdateChecker::updateAvailable, this,
             [this](const QString& tag, const QString& url) {
@@ -381,12 +337,9 @@ PumpWidget::PumpWidget(QWidget* parent)
     });
     m_updater->check(QStringLiteral(NZXT_PUMP_VERSION));
 
-    // ── Worker thread ───────────────────────────────────────────────────────
     m_thread = new QThread(this);
     m_thread->setObjectName(QStringLiteral("KrakenPumpWorker"));
     m_worker = new PumpWorker(&m_device);
-    // Headers vides mémorisés : masqués dès l'énumération (avant le start,
-    // appel direct sûr), la surveillance continue côté worker.
     m_worker->presetPumpTachChannels(m_pumpTachIds);
     m_worker->moveToThread(m_thread);
     connect(m_thread, &QThread::started, m_worker, &PumpWorker::start);
@@ -401,7 +354,6 @@ PumpWidget::PumpWidget(QWidget* parent)
     });
     connect(m_worker, &PumpWorker::readings, this,
             [this](float temp, int pumpRpm, int pumpDuty, int fanRpm, int /*fanDuty*/) {
-        // Même format et mêmes éléments que la ligne de statut du plugin LCD
         const bool fahr  = m_fahrenheit;
         const double liq = fahr ? temp * 9.0 / 5.0 + 32.0 : temp;
         m_lblStatus->setText(QStringLiteral("Liq. %1°%2  Pump %3 RPM  Fan %4 RPM")
@@ -413,7 +365,6 @@ PumpWidget::PumpWidget(QWidget* parent)
                                               .arg(pumpRpm).arg(pumpDuty));
     });
 
-    // ── Signaux ventilateurs ────────────────────────────────────────────────
     connect(m_worker, &PumpWorker::fanChannelsReady, this,
             [this](const QStringList& ids, const QStringList& names,
                    const QStringList& groups) {
@@ -423,22 +374,16 @@ PumpWidget::PumpWidget(QWidget* parent)
             [this](const QStringList& ids, const QStringList& names) {
         m_srcIds   = ids;
         m_srcNames = names;
-        // Re-resolution des sources persistees : la config stocke un nom stable
-        // ("GPU Average"...) et non l'id LHM brut, qui change quand le driver GPU
-        // est mis a jour (index de sonde renumerote). On remappe nom -> id courant
-        // pour chaque canal, puis on republie au worker les canaux dont l'id a
-        // change (sinon la selection retomberait sur une autre sonde).
         QSet<QString> remapped;
         for (auto it = m_fanCfgs.begin(); it != m_fanCfgs.end(); ++it) {
             QString& sid = it.value().sourceId;
             if (sid.isEmpty() || sid == QLatin1String("liquid"))
                 continue;
             const int byName = m_srcNames.indexOf(sid);
-            if (byName >= 0) {                       // nom stable -> id courant
+            if (byName >= 0) {
                 const QString cur = m_srcIds.value(byName);
                 if (cur != sid) { sid = cur; remapped.insert(it.key()); }
             }
-            // sinon : id brut legacy (encore valide) ou source disparue -> laisse
         }
         for (ChannelPanel* p : m_fanPanels) {
             fillSourceCombo(p->source, fanCfg(p->id).sourceId);
@@ -453,12 +398,10 @@ PumpWidget::PumpWidget(QWidget* parent)
                    const QVector<int>& duties) {
         for (ChannelPanel* p : m_fanPanels) {
             if (m_identSpin.contains(p->id))
-                continue;   // garde le texte "Identify" pendant les 5 s
+                continue;
             const int i = ids.indexOf(p->id);
             if (i < 0)
                 continue;
-            // Canal calibré : % = interp inverse RPM courant -> duty sur la
-            // table mesurée (le duty commandé ne reflète pas le régime réel).
             int pct = duties.value(i);
             const auto tbl = m_calibTables.constFind(p->id);
             if (tbl != m_calibTables.constEnd()) {
@@ -471,7 +414,7 @@ PumpWidget::PumpWidget(QWidget* parent)
     });
     connect(m_worker, &PumpWorker::calibrationSpin, this,
             [this](const QStringList& ids, int duty) {
-        if (ids.isEmpty() || duty <= 0) {   // fin / palier 0 % : tout ralentir
+        if (ids.isEmpty() || duty <= 0) {
             for (auto it = m_calibSpin.begin(); it != m_calibSpin.end(); ++it) {
                 it.value().targetVel = 0.0;
                 it.value().stopping  = true;
@@ -480,7 +423,7 @@ PumpWidget::PumpWidget(QWidget* parent)
             const qreal target = kSpinMax * duty / 100.0;
             const QSet<QString> want(ids.begin(), ids.end());
             for (auto it = m_calibSpin.begin(); it != m_calibSpin.end(); ++it)
-                if (!want.contains(it.key())) {   // plus calibré : ralentir
+                if (!want.contains(it.key())) {
                     it.value().targetVel = 0.0;
                     it.value().stopping  = true;
                 }
@@ -518,7 +461,6 @@ PumpWidget::PumpWidget(QWidget* parent)
             m_btnCalib->setEnabled(true);
             setCalibBadge(!m_calibTables.isEmpty());
         }
-        // Propager les seuils de démarrage mesurés au worker (plancher/kick)
         for (ChannelPanel* p : m_fanPanels)
             if (!p->isPump)
                 pushFanCfg(p);
@@ -538,7 +480,6 @@ PumpWidget::PumpWidget(QWidget* parent)
 
     m_ready = true;
 
-    // Pousser la config pompe chargée vers le worker
     dispatchPump();
 }
 
@@ -548,7 +489,6 @@ PumpWidget::~PumpWidget()
     if (m_saveTimer) { m_saveTimer->stop(); saveConfig(); }
 
     if (m_worker) {
-        // stop() rend les canaux LHM au BIOS (failsafe) puis ferme le device
         QMetaObject::invokeMethod(m_worker, "stop", Qt::BlockingQueuedConnection);
         m_thread->quit();
         m_thread->wait(3000);
@@ -560,28 +500,23 @@ PumpWidget::~PumpWidget()
 // ─── UI ───────────────────────────────────────────────────────────────────────
 void PumpWidget::buildUI()
 {
-    // Mêmes marges/espacements que le plugin LCD (root 16,12,16,12 / col 8)
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(16, 12, 16, 12);
     root->setSpacing(8);
 
-    // Header : nom device + statut empilés (même structure que le plugin LCD),
-    // bouton de calibration des ventilateurs à droite.
     m_lblDeviceName = new QLabel(QStringLiteral("Detecting…"));
     m_lblDeviceName->setStyleSheet("font-weight:600;font-size:13px;");
-    m_lblStatus = new QLabel();   // vide au départ (comme le plugin LCD)
+    m_lblStatus = new QLabel();
     m_lblStatus->setStyleSheet(statusLabelStyle(m_darkTheme));
 
     m_btnCalib = new QPushButton(QStringLiteral("Calibrate fans"));
     m_btnCalib->setFixedHeight(22);
     m_btnCalib->setCursor(Qt::ArrowCursor);
     m_btnCalib->setToolTip(QStringLiteral("Show each fan's real speed"));
-    m_calibBadge = new CornerBadge(this);   // overlay, chevauche le coin du bouton
+    m_calibBadge = new CornerBadge(this);
     m_calibBadge->hide();
     connect(m_btnCalib, &QPushButton::clicked, this, [this] {
         if (!m_worker) return;
-        // Nouvelle passe : effacer les tables précédentes et retirer le badge
-        // jusqu'à la fin (le % réaffiche le duty commandé en attendant).
         m_calibTables.clear();
         setCalibBadge(false);
         m_btnCalib->setEnabled(false);
@@ -593,14 +528,13 @@ void PumpWidget::buildUI()
     auto* headRow = new QHBoxLayout();
     headRow->setSpacing(8);
     auto* headCol = new QVBoxLayout();
-    headCol->setSpacing(8);   // respiration nom/statut (aligné plugin LCD)
+    headCol->setSpacing(8);
     headCol->addWidget(m_lblDeviceName);
     headCol->addWidget(m_lblStatus);
     headRow->addLayout(headCol, 1);
     headRow->addWidget(m_btnCalib, 0, Qt::AlignTop);
     root->addLayout(headRow);
 
-    // Bannière de mise à jour (masquée tant qu'aucune version plus récente).
     m_updateBanner = new QLabel();
     m_updateBanner->setTextFormat(Qt::RichText);
     m_updateBanner->setOpenExternalLinks(true);
@@ -609,14 +543,10 @@ void PumpWidget::buildUI()
     m_updateBanner->hide();
     root->addWidget(m_updateBanner);
 
-    // Liste scrollable des blocs hardware
     auto* scroll = new QScrollArea();
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    // Fond transparent : sans ça le viewport peint QPalette::Base (plus foncé
-    // que la fenêtre OpenRGB) derrière les blocs. Stylesheet explicite requis,
-    // OpenRGB stylant les QAbstractScrollArea via son QSS applicatif.
     scroll->setObjectName(QStringLiteral("pumpScroll"));
     scroll->setStyleSheet(QStringLiteral(
         "#pumpScroll{background:transparent;}"
@@ -627,8 +557,6 @@ void PumpWidget::buildUI()
     container->setStyleSheet(QStringLiteral("#pumpScrollBody{background:transparent;}"));
     container->setAutoFillBackground(false);
     m_listLay = new QVBoxLayout(container);
-    // Aucune marge : la scrollbar (hors viewport) n'a pas besoin de réserve,
-    // et un 6 px à droite seul décentrait les blocs.
     m_listLay->setContentsMargins(0, 0, 0, 0);
     m_listLay->setSpacing(10);
     scroll->setWidget(container);
@@ -636,7 +564,6 @@ void PumpWidget::buildUI()
 
     m_listLay->addStretch();
 
-    // Bloc Kraken initial (pompe seule, avant la découverte des canaux)
     rebuildFanPanels({}, {}, {});
 }
 
@@ -649,7 +576,6 @@ QFrame* PumpWidget::makeSeparator()
     return line;
 }
 
-// Canaux GPU : LHM ("/gpu…"), ADLX AMD ("adlx/…"), NVML NVIDIA ("nvml/…").
 static bool isGpuChannelId(const QString& id)
 {
     return id.startsWith(QStringLiteral("/gpu")) || id.startsWith(QStringLiteral("adlx/"))
@@ -676,15 +602,13 @@ PumpWidget::ChannelPanel* PumpWidget::createPanel(const QString& id,
     lay->setContentsMargins(2, 4, 2, 4);
     lay->setSpacing(6);
 
-    // ── Rangée d'en-tête : icône + nom + RPM/duty + sonde + mode ────────────
     auto* head = new QHBoxLayout();
     head->setSpacing(8);
 
     p->icon = new QLabel();
     p->icon->setPixmap(makeChannelIcon(p->iconType, m_darkTheme));
     p->icon->setFixedSize(28, 28);
-    if (!isPump && !isGpuChannelId(id)) {   // ni la pompe ni la GPU : Identify inutile
-        // Clic sur l'icône = Identify (100 % pendant 5 s, pales animées)
+    if (!isPump && !isGpuChannelId(id)) {
         p->icon->setToolTip(QStringLiteral("Identify"));
         p->icon->installEventFilter(this);
         m_iconOwner.insert(p->icon, p);
@@ -707,15 +631,11 @@ PumpWidget::ChannelPanel* PumpWidget::createPanel(const QString& id,
     fitNameWidth(p->name);
     connect(p->name, &QLineEdit::textChanged, this,
             [p] { fitNameWidth(p->name); });
-    // Nom + alerte sonde absente serrés dans un sous-layout (le spacing 8 de
-    // l'en-tête laissait un trou entre le nom et le ⚠).
     auto* nameRow = new QHBoxLayout();
     nameRow->setContentsMargins(0, 0, 0, 0);
     nameRow->setSpacing(0);
     nameRow->addWidget(p->name);
 
-    // Triangle orange à droite du nom, tooltip = cause. Masqué par défaut.
-    // Marge gauche négative : absorbe le slack interne du QLineEdit.
     p->warn = new QLabel();
     p->warn->setPixmap(makeWarnIcon(15));
     p->warn->setFixedSize(15, 15);
@@ -724,14 +644,13 @@ PumpWidget::ChannelPanel* PumpWidget::createPanel(const QString& id,
     nameRow->addWidget(p->warn);
 
     head->addLayout(nameRow);
-    head->addStretch(1);   // le reste de la rangée = zone de clic repli/dépli
+    head->addStretch(1);
 
     p->reading = new QLabel(QStringLiteral("—"));
     p->reading->setStyleSheet(statusLabelStyle(m_darkTheme));
     p->reading->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     head->addWidget(p->reading);
 
-    // Sonde de température (dans l'en-tête, visible rangée repliée)
     p->source = new QComboBox();
     p->source->setMinimumWidth(120);
     head->addWidget(p->source);
@@ -745,8 +664,6 @@ PumpWidget::ChannelPanel* PumpWidget::createPanel(const QString& id,
     p->mode->setMinimumWidth(140);
     head->addWidget(p->mode);
 
-    // Bouton masquer (✕) : retire la prise de l'UI (persisté). Remplace la
-    // détection auto par zéro-RPM. Ré-affichage via le pied de liste.
     if (!isPump) {
         auto* hide = new QPushButton(QStringLiteral("✕"));
         hide->setCursor(Qt::ArrowCursor);
@@ -767,13 +684,10 @@ PumpWidget::ChannelPanel* PumpWidget::createPanel(const QString& id,
     }
     lay->addLayout(head);
 
-    // ── Corps repliable : rangée de contrôles + courbe (replié par défaut) ──
     p->body = new QWidget();
     auto* bodyLay = new QVBoxLayout(p->body);
     bodyLay->setContentsMargins(0, 0, 0, 0);
 
-    // Graphe + colonne Step up/down à sa droite (zone vide de l'éditeur),
-    // puis Reset/Apply sous le graphe. (Identify : clic sur l'icône.)
     {
         auto* mid = new QHBoxLayout();
         mid->setSpacing(6);
@@ -781,12 +695,9 @@ PumpWidget::ChannelPanel* PumpWidget::createPanel(const QString& id,
         p->editor = new PumpCurveEditor();
         p->editor->setMinDuty(isPump ? 20 : 0);
         p->editor->setFahrenheit(m_fahrenheit);
-        p->editor->setRightMargin(16);   // la colonne de droite prend le relais
+        p->editor->setRightMargin(16);
         mid->addWidget(p->editor, 1);
 
-        // Colonne de contrôles à droite, bornée sur la hauteur de la zone
-        // tracée (plotRect : 10 px en haut, 38 px d'étiquettes en bas) :
-        // Step up / Step down en haut, Reset / Apply en bas, largeur unique.
         constexpr int SIDE_W = 84;
         auto* side = new QVBoxLayout();
         side->setSpacing(2);
@@ -809,8 +720,6 @@ PumpWidget::ChannelPanel* PumpWidget::createPanel(const QString& id,
         side->addSpacing(8);
         p->stepDown = makeStep(QStringLiteral("Step down"), 5);
 
-        // Seuil zéro-RPM manuel (ventilos seulement) : duty sous lequel le
-        // ventilo s'arrête. 0 = auto (seuil mesuré à la calibration).
         if (!isPump) {
             side->addSpacing(8);
             auto* zl = new QLabel(QStringLiteral("Zero-RPM"));
@@ -869,9 +778,8 @@ PumpWidget::ChannelPanel* PumpWidget::createPanel(const QString& id,
     }
 
     lay->addWidget(p->body);
-    p->body->setVisible(false);   // replié par défaut
+    p->body->setVisible(false);
 
-    // ── Connexions ──────────────────────────────────────────────────────────
     if (isPump) {
         connect(p->mode, QOverload<int>::of(&QComboBox::currentIndexChanged),
                 this, [this](int) { onPumpModeChanged(); });
@@ -894,7 +802,6 @@ PumpWidget::ChannelPanel* PumpWidget::createPanel(const QString& id,
                 this, [this, p] { onFanCurveEdited(p); });
     }
 
-    // Validation du renommage (Entrée ou perte de focus)
     connect(p->name, &QLineEdit::editingFinished, this, [this, p] {
         p->name->setReadOnly(true);
         p->name->deselect();
@@ -915,15 +822,13 @@ void PumpWidget::setPanelExpanded(ChannelPanel* p, bool expanded)
     p->body->setVisible(expanded);
 }
 
-// Clic n'importe où sur la rangée -> repli/dépli ;
-// simple clic sur le nom -> renommage inline (curseur texte au survol).
 bool PumpWidget::eventFilter(QObject* obj, QEvent* e)
 {
     if (e->type() == QEvent::MouseButtonRelease) {
         auto itI = m_iconOwner.find(obj);
         if (itI != m_iconOwner.end()) {
             startIdentify(itI.value());
-            return true;   // ne pas replier/déplier la rangée
+            return true;
         }
         auto itB = m_boxOwner.find(obj);
         if (itB != m_boxOwner.end()) {
@@ -949,23 +854,18 @@ void PumpWidget::fillSourceCombo(QComboBox* combo, const QString& selectedId)
     combo->clear();
     for (int i = 0; i < m_srcIds.size(); ++i)
         combo->addItem(m_srcNames.value(i), m_srcIds.value(i));
-    // Source non résolue (ex. "GPU Average" sans driver GPU) : combo VIDE
-    // (-1) plutôt que le 1er item — qui afficherait une sonde que le worker
-    // n'utilise pas, en contradiction avec l'alerte ⚠.
     combo->setCurrentIndex(combo->findData(selectedId));
 }
 
 void PumpWidget::applyFaultStyle(ChannelPanel* p)
 {
-    if (!p || p->isPump) return;   // pompe = source liquide, géré via statut device
+    if (!p || p->isPump) return;
     const auto it = m_faultReason.constFind(p->id);
     const bool fault = (it != m_faultReason.constEnd());
     if (p->warn) {
         p->warn->setVisible(fault);
         if (fault) p->warn->setToolTip(it.value());
     }
-    // Pas pendant une anim (identify/calibration) : le timer de spin peint
-    // l'icône lui-même, avec la teinte fault.
     if (p->icon && !m_identSpin.contains(p->id) && !m_calibSpin.contains(p->id))
         p->icon->setPixmap(makeChannelIcon(p->iconType, m_darkTheme, 0.0,
                                            fault ? kSensorWarn : QColor()));
@@ -978,8 +878,6 @@ void PumpWidget::rebuildFanPanels(const QStringList& ids, const QStringList& nam
 {
     m_chIds = ids; m_chNames = names; m_chGroups = groups;
 
-
-    // Tout supprimer (les panneaux sont enfants des blocs)
     m_nameOwner.clear();
     m_boxOwner.clear();
     m_iconOwner.clear();
@@ -993,18 +891,16 @@ void PumpWidget::rebuildFanPanels(const QStringList& ids, const QStringList& nam
     m_separators.clear();
     m_hideBtns.clear();
     for (ChannelPanel* p : m_fanPanels)
-        delete p;   // les widgets meurent avec leur bloc
+        delete p;
     m_fanPanels.clear();
     m_pumpPanel = nullptr;
 
-    // Ordre des sections : Kraken d'abord (pompe [+ fan]), puis les groupes
-    // LHM dans leur ordre d'apparition.
-    struct Section { QString title; QVector<int> idx; };   // idx dans ids (-1 = pompe)
+    struct Section { QString title; QVector<int> idx; };
     QVector<Section> sections;
     sections.append({ m_krakenGroup, { -1 } });
     for (int i = 0; i < ids.size(); ++i) {
         if (m_hiddenIds.contains(ids.value(i)))
-            continue;   // masqué manuellement (bouton ✕) — pied de liste pour ré-afficher
+            continue;
         const QString g = (ids.value(i) == KRAKEN_FAN_ID) ? m_krakenGroup
                                                           : groups.value(i);
         int s = -1;
@@ -1014,7 +910,6 @@ void PumpWidget::rebuildFanPanels(const QStringList& ids, const QStringList& nam
         sections[s].idx.append(i);
     }
 
-    // Un bloc (cadre) par section, inséré avant le stretch final
     int at = m_listLay->count() - 1;
     for (const Section& sec : sections) {
         auto* frame = new QFrame();
@@ -1034,7 +929,7 @@ void PumpWidget::rebuildFanPanels(const QStringList& ids, const QStringList& nam
                 v->addWidget(makeSeparator());
             first = false;
 
-            if (i < 0) {   // pompe
+            if (i < 0) {
                 ChannelPanel* p = createPanel(KRAKEN_PUMP_ID, QStringLiteral("Pump"), true);
                 m_pumpPanel = p;
                 applyPumpCfgToUi();
@@ -1067,8 +962,6 @@ void PumpWidget::rebuildFanPanels(const QStringList& ids, const QStringList& nam
             v->addWidget(p->box);
             m_fanPanels.append(p);
 
-            // Pousser la config persistée vers le worker (plus de mode Auto :
-            // tous les canaux sont pilotés)
             pushFanCfg(p);
         }
 
@@ -1076,8 +969,6 @@ void PumpWidget::rebuildFanPanels(const QStringList& ids, const QStringList& nam
         m_groupFrames.append(frame);
     }
 
-    // ── Section repliable "Hidden fans" : mêmes lignes que les canaux visibles
-    // (icône + nom + groupe), avec un bouton Show pour ré-afficher ───────────
     QStringList hiddenPresent;
     for (const QString& hid : m_hiddenIds)
         if (ids.contains(hid) && !hiddenPresent.contains(hid))
@@ -1090,8 +981,6 @@ void PumpWidget::rebuildFanPanels(const QStringList& ids, const QStringList& nam
         v->setContentsMargins(10, 8, 10, 8);
         v->setSpacing(4);
 
-        // Corps : une ligne par canal masqué (construit avant l'en-tête pour
-        // le capturer dans le toggle).
         auto* bodyW = new QWidget();
         auto* bl = new QVBoxLayout(bodyW);
         bl->setContentsMargins(0, 4, 0, 0);
@@ -1149,7 +1038,6 @@ void PumpWidget::rebuildFanPanels(const QStringList& ids, const QStringList& nam
         }
         bodyW->setVisible(m_hiddenExpanded);
 
-        // En-tête cliquable : chevron + libellé, replie/déplie le corps.
         auto* headerBtn = new QPushButton();
         headerBtn->setCursor(Qt::PointingHandCursor);
         headerBtn->setStyleSheet(QStringLiteral(
@@ -1172,14 +1060,13 @@ void PumpWidget::rebuildFanPanels(const QStringList& ids, const QStringList& nam
         v->addWidget(bodyW);
 
         m_listLay->insertWidget(at++, frame);
-        m_groupFrames.append(frame);   // nettoyé comme les blocs au prochain rebuild
+        m_groupFrames.append(frame);
     }
 
-    for (ChannelPanel* p : m_fanPanels)   // ré-applique les alertes sonde
+    for (ChannelPanel* p : m_fanPanels)
         applyFaultStyle(p);
 }
 
-// ─── Pompe ────────────────────────────────────────────────────────────────────
 void PumpWidget::applyPumpCfgToUi()
 {
     if (!m_pumpPanel) return;
@@ -1208,7 +1095,7 @@ QVector<QPoint> PumpWidget::effectivePumpPoints(const FanChannelConfig& cfg) con
             return pumpPresetPoints(cfg.mode);
         case FanFixed:
             return fixedPoints(std::clamp(cfg.fixedDuty, 20, 100));
-        default:   // Custom
+        default:
             return cfg.points.isEmpty() ? pumpPresetPoints(FanSilent)
                                         : cfg.points;
     }
@@ -1228,8 +1115,6 @@ void PumpWidget::onPumpCurveEdited()
     FanChannelConfig& cfg = fanCfg(KRAKEN_PUMP_ID);
     const QVector<QPoint> pts = m_pumpPanel->editor->points();
 
-    // Mode Fixed : drag des 2 points liés = nouveau duty fixe, on RESTE en
-    // Fixed ; un point ajouté fait basculer en Custom.
     if (cfg.mode == FanFixed && pts.size() == 2
             && pts[0].y() == pts[1].y()) {
         cfg.fixedDuty = pts[0].y();
@@ -1247,23 +1132,19 @@ void PumpWidget::onPumpCurveEdited()
     if (m_ready) dispatchPump();
 }
 
-// Pompe : toujours la boucle logicielle du worker (courbe plate 1 Hz, plancher
-// 20 % + ré-écriture sur mismatch côté worker) — la sémantique de la courbe
-// native n'est pas fiable sur Elite/Elite V2 (nouveau protocole 0x72).
 void PumpWidget::dispatchPump()
 {
     if (!m_worker || !m_pumpPanel) return;
     const FanChannelConfig& cfg = fanCfg(KRAKEN_PUMP_ID);
 
     FanChannelConfig eff = cfg;
-    eff.points = effectivePumpPoints(cfg);   // le worker interpole sur l'effectif
+    eff.points = effectivePumpPoints(cfg);
     QMetaObject::invokeMethod(m_worker, "setFanConfig", Qt::QueuedConnection,
                               Q_ARG(QString, KRAKEN_PUMP_ID),
                               Q_ARG(NZXTKrakenPump::FanChannelConfig, eff));
     m_saveTimer->start();
 }
 
-// ─── Ventilateurs ─────────────────────────────────────────────────────────────
 FanChannelConfig& PumpWidget::fanCfg(const QString& id)
 {
     if (!m_fanCfgs.contains(id)) {
@@ -1283,7 +1164,6 @@ FanChannelConfig& PumpWidget::fanCfg(const QString& id)
             for (const QString& s : m_srcIds)
                 if (s.startsWith(QStringLiteral("/amdcpu"))
                     || s.startsWith(QStringLiteral("/intelcpu"))) { def.sourceId = s; break; }
-            // Ventilateur de GPU (ADLX) : suit la température du GPU par défaut.
             if ((id.startsWith(QStringLiteral("adlx/")) || id.startsWith(QStringLiteral("nvml/")))
                 && m_srcIds.contains(QStringLiteral("GPU Average")))
                 def.sourceId = QStringLiteral("GPU Average");
@@ -1301,7 +1181,7 @@ QVector<QPoint> PumpWidget::effectiveFanPoints(const FanChannelConfig& cfg) cons
             return fanPresetPoints(cfg.mode);
         case FanFixed:
             return fixedPoints(std::clamp(cfg.fixedDuty, 0, 100));
-        default:   // Custom
+        default:
             return cfg.points.isEmpty() ? fanPresetPoints(FanSilent)
                                         : cfg.points;
     }
@@ -1319,8 +1199,7 @@ void PumpWidget::pushFanCfg(ChannelPanel* p)
     if (!m_worker) return;
     const FanChannelConfig& stored = fanCfg(p->id);
     FanChannelConfig eff = stored;
-    eff.points = effectiveFanPoints(stored);   // le worker interpole sur l'effectif
-    // Seuil de démarrage mesuré (calib) : plancher zero-RPM + kick par ventilo
+    eff.points = effectiveFanPoints(stored);
     const auto tbl = m_calibTables.constFind(p->id);
     if (tbl != m_calibTables.constEnd())
         eff.startDuty = calibStartDuty(tbl.value());
@@ -1343,8 +1222,6 @@ void PumpWidget::onFanCurveEdited(ChannelPanel* p)
     FanChannelConfig& cfg = fanCfg(p->id);
     const QVector<QPoint> pts = p->editor->points();
 
-    // Mode Fixed : drag des 2 points liés = nouveau duty fixe, on RESTE en
-    // Fixed ; un point ajouté fait basculer en Custom.
     if (cfg.mode == FanFixed && pts.size() == 2
             && pts[0].y() == pts[1].y()) {
         cfg.fixedDuty = pts[0].y();
@@ -1362,7 +1239,6 @@ void PumpWidget::onFanCurveEdited(ChannelPanel* p)
     pushFanCfg(p);
 }
 
-// Recharge l'UI d'un panneau depuis sa config (signaux bloqués), puis pousse.
 void PumpWidget::applyPanelCfgToUi(ChannelPanel* p)
 {
     const FanChannelConfig& cfg = fanCfg(p->id);
@@ -1389,15 +1265,12 @@ void PumpWidget::applyPanelCfgToUi(ChannelPanel* p)
     }
 }
 
-// Identify (clic sur l'icône) : le worker force 100 % pendant 5 s ; côté UI,
-// les pales de l'icône tournent — accélération progressive, palier à pleine
-// vitesse, puis décélération progressive — et la lecture affiche "Identify".
 void PumpWidget::startIdentify(ChannelPanel* p)
 {
     if (p->isPump || isGpuChannelId(p->id) || m_identSpin.contains(p->id))
         return;
     if (m_btnCalib && !m_btnCalib->isEnabled())
-        return;   // calibration en cours : le worker refuserait (RPM faussés)
+        return;
     if (m_worker)
         QMetaObject::invokeMethod(m_worker, "identify", Qt::QueuedConnection,
                                   Q_ARG(QString, p->id));
@@ -1408,9 +1281,6 @@ void PumpWidget::startIdentify(ChannelPanel* p)
     m_spinTimer->start();
 }
 
-// Timer unique (30 ms) qui pilote les deux animations de pales : identify
-// (profil temporel fixe) et calibration (vitesse ∝ duty du palier). Créé à la
-// demande ; s'arrête quand les deux maps sont vides.
 void PumpWidget::ensureSpinTimer()
 {
     if (m_spinTimer) return;
@@ -1426,13 +1296,12 @@ void PumpWidget::ensureSpinTimer()
             return nullptr;
         };
 
-        // ── Identify ────────────────────────────────────────────────────────
         for (auto it = m_identSpin.begin(); it != m_identSpin.end(); ) {
             const qint64 t = now - it.value().startMs;
             ChannelPanel* panel = panelFor(it.key());
             if (t >= 8500 || !panel) {
                 it = m_identSpin.erase(it);
-                if (panel) applyFaultStyle(panel);   // restaure icône/nom/⚠
+                if (panel) applyFaultStyle(panel);
                 continue;
             }
             if (t <= 6500) {
@@ -1456,9 +1325,6 @@ void PumpWidget::ensureSpinTimer()
             ++it;
         }
 
-        // ── Calibration ─────────────────────────────────────────────────────
-        // vel glisse vers targetVel (∝ duty) : montée en charge / ralenti en
-        // ~2 s (accel = kSpinMax/2). Retiré quand l'arrêt est atteint (vel 0).
         const qreal accel = kSpinMax / 2.0;
         for (auto it = m_calibSpin.begin(); it != m_calibSpin.end(); ) {
             CalibSpin& s = it.value();
@@ -1467,7 +1333,7 @@ void PumpWidget::ensureSpinTimer()
             s.angle += s.vel * dt;
             ChannelPanel* panel = panelFor(it.key());
             if (s.stopping && s.vel <= 0.5) {
-                if (panel) applyFaultStyle(panel);   // icône au repos + ⚠ si fault
+                if (panel) applyFaultStyle(panel);
                 it = m_calibSpin.erase(it);
                 continue;
             }
@@ -1484,8 +1350,6 @@ void PumpWidget::ensureSpinTimer()
     });
 }
 
-// Reset : mode Silent, courbe = preset Silent, duty fixe et rampes par
-// défaut. Nom et sonde conservés.
 void PumpWidget::resetPanel(ChannelPanel* p)
 {
     FanChannelConfig& cfg = fanCfg(p->id);
@@ -1495,15 +1359,11 @@ void PumpWidget::resetPanel(ChannelPanel* p)
     cfg.fixedDuty = 50;
     cfg.riseRate  = 5;
     cfg.fallRate  = 5;
-    cfg.zeroBelow = 0;   // retour au seuil zéro-RPM auto (calibré)
+    cfg.zeroBelow = 0;
     applyPanelCfgToUi(p);
     m_saveTimer->start();
 }
 
-// Popover "Apply" — mêmes traits que les popovers couleur du plugin LCD :
-// QFrame Qt::Popup translucide, fond arrondi peint (10 px), palette dédiée,
-// boutons "surface". Liste scrollable des autres ventilateurs à cocher ; la
-// courbe (mode, points, rampes) du canal source est copiée sur les cochés.
 namespace {
 class ApplyPopover : public QFrame {
 public:
@@ -1517,10 +1377,7 @@ public:
         const QString surface = dark ? "#1F1F23" : "#EBEBEE";
         const QString border  = dark ? "#2A2A2E" : "#D0D0D4";
         const QString hover   = dark ? "#22222A" : "#DDDDE0";
-        const QString accent  = "#2ECC71";   // même vert que la pastille Calibrate
-        // La case à cocher reprend le fond + le contour des boutons Apply/Cancel
-        // (même surface, même bordure -> cohérence, visible en clair comme en
-        // sombre). Cochée : remplie en accent vert + coche blanche (PNG généré).
+        const QString accent  = "#2ECC71";
         const QString check = checkMarkImagePath();
         setStyleSheet(QString(
             "QLabel{color:%1;font-size:11px;background:transparent;border:none;}"
@@ -1557,7 +1414,6 @@ private:
 
 void PumpWidget::showApplyPopover(ChannelPanel* src, QPushButton* anchor)
 {
-    // Cibles : tous les ventilateurs sauf la source et sauf la pompe
     QVector<ChannelPanel*> targets;
     for (ChannelPanel* t : m_fanPanels)
         if (t != src && !t->isPump)
@@ -1569,8 +1425,6 @@ void PumpWidget::showApplyPopover(ChannelPanel* src, QPushButton* anchor)
     lay->setContentsMargins(12, 10, 12, 10);
     lay->setSpacing(8);
 
-    // Aucune cible (pas de lhwm-wrapper.dll, ou seul canal) : état vide
-    // explicite plutôt qu'un clic sans effet.
     if (targets.isEmpty()) {
         auto* empty = new QLabel(QStringLiteral("No other fan channel to apply to."));
         lay->addWidget(empty);
@@ -1613,7 +1467,6 @@ void PumpWidget::showApplyPopover(ChannelPanel* src, QPushButton* anchor)
     scroll->setFixedHeight(std::min(160, targets.size() * 26 + 8));
     lay->addWidget(scroll);
 
-    // Rangée de boutons en bas, comme le popover couleur du LCD
     auto* btnRow = new QHBoxLayout();
     btnRow->setSpacing(8);
     auto* ok     = new QPushButton(QStringLiteral("Apply"));
@@ -1625,8 +1478,6 @@ void PumpWidget::showApplyPopover(ChannelPanel* src, QPushButton* anchor)
     connect(cancel, &QPushButton::clicked, pop, &QWidget::close);
     connect(ok, &QPushButton::clicked, this, [this, pop, src, checks] {
         const FanChannelConfig& sc = fanCfg(src->id);
-        // Modes pompe et ventilos partagent les mêmes index (config v3) :
-        // copie directe de mode, points, duty fixe et rampes.
         for (QCheckBox* ck : checks) {
             if (!ck->isChecked()) continue;
             const QString id = ck->property("chId").toString();
@@ -1644,8 +1495,6 @@ void PumpWidget::showApplyPopover(ChannelPanel* src, QPushButton* anchor)
         pop->close();
     });
 
-    // Ancrage sous le bouton, centré, borné à l'écran (même logique que le
-    // popover du plugin LCD).
     pop->adjustSize();
     const QPoint global = anchor->mapToGlobal(QPoint(0, anchor->height()));
     int x = global.x() + anchor->width() / 2 - pop->width() / 2;
@@ -1661,7 +1510,6 @@ void PumpWidget::showApplyPopover(ChannelPanel* src, QPushButton* anchor)
     pop->setFocus();
 }
 
-// ─── Pastille de calibration (overlay) ─────────────────────────────────────────
 void PumpWidget::setCalibBadge(bool on)
 {
     if (!m_calibBadge) return;
@@ -1673,10 +1521,8 @@ void PumpWidget::positionCalibBadge()
 {
     if (!m_calibBadge || !m_btnCalib || !m_calibBadge->isVisible())
         return;
-    // Centre la pastille sur le coin haut-droit du bouton (chevauche le
-    // contour, moitié dehors), en coordonnées du widget principal.
     const QPoint corner = m_btnCalib->mapTo(this, QPoint(m_btnCalib->width(), 0));
-    constexpr int inset = 3;   // rentré vers l'intérieur (bas-gauche)
+    constexpr int inset = 3;
     m_calibBadge->move(corner.x() - m_calibBadge->width() / 2 - inset,
                        corner.y() - m_calibBadge->height() / 2 + inset);
     m_calibBadge->raise();
@@ -1691,11 +1537,9 @@ void PumpWidget::resizeEvent(QResizeEvent* e)
 void PumpWidget::showEvent(QShowEvent* e)
 {
     QWidget::showEvent(e);
-    // Le layout n'est fixé qu'après le premier show : replacer au tick suivant.
     QTimer::singleShot(0, this, [this] { positionCalibBadge(); });
 }
 
-// ─── Thème / langue ───────────────────────────────────────────────────────────
 void PumpWidget::setDarkTheme(bool dark)
 {
     m_darkTheme = dark;
@@ -1711,23 +1555,19 @@ void PumpWidget::setDarkTheme(bool dark)
         p->reading->setStyleSheet(labStyle);
         p->icon->setPixmap(makeChannelIcon(p->iconType, dark));
         p->editor->update();
-        applyFaultStyle(p);   // ré-applique ⚠ + orange sur le nouveau thème
+        applyFaultStyle(p);
     }
 }
 
 void PumpWidget::changeEvent(QEvent* e)
 {
     QWidget::changeEvent(e);
-    // OpenRGB applique sa palette (sombre/claire) à toute l'application ; on
-    // suit ses changements de thème à chaud (même mécanisme que le plugin LCD).
     if (e && (e->type() == QEvent::PaletteChange ||
               e->type() == QEvent::ApplicationPaletteChange)) {
         const bool dark = palette().color(QPalette::Window).lightness() < 128;
         if (dark != m_darkTheme)
             setDarkTheme(dark);
     }
-    // OpenRGB change la langue à chaud (installTranslator -> LanguageChange) ;
-    // on resuit l'unité de température (°C/°F) selon la locale OpenRGB.
     if (e && e->type() == QEvent::LanguageChange) {
         m_fahrenheit = OpenRGBSettings::prefersFahrenheit();
         for (ChannelPanel* p : m_fanPanels)
@@ -1735,8 +1575,6 @@ void PumpWidget::changeEvent(QEvent* e)
     }
 }
 
-// ─── Persistence ──────────────────────────────────────────────────────────────
-// Même emplacement que le plugin LCD : %APPDATA%/OpenRGB/NZXTKrakenPump/
 QString PumpWidget::configFilePath()
 {
     return OpenRGBSettings::configDir()
@@ -1768,15 +1606,10 @@ static QVector<QPoint> pointsFromJson(const QJsonArray& arr)
 
 void PumpWidget::saveConfig()
 {
-    // Tous les canaux (pompe comprise, clé "kraken/pump") dans "fans"
     QJsonObject fansObj;
     for (auto it = m_fanCfgs.constBegin(); it != m_fanCfgs.constEnd(); ++it) {
         QJsonObject o;
         o[QStringLiteral("mode")]   = it.value().mode;
-        // Source persistee par NOM stable ("GPU Average"...) et non par id LHM
-        // brut : l'id est renumerote a chaque maj de driver GPU. On reconvertit
-        // l'id courant en nom via la table des sources ; si indisponible (sources
-        // pas encore pretes) on retombe sur l'id brut (relu comme legacy).
         const QString& sid = it.value().sourceId;
         const int si = m_srcIds.indexOf(sid);
         o[QStringLiteral("source")] =
@@ -1791,11 +1624,11 @@ void PumpWidget::saveConfig()
         fansObj[it.key()] = o;
     }
     QJsonObject rootObj;
-    rootObj[QStringLiteral("v")]    = 3;   // v3 : Auto retiré, Fixed ajouté
+    rootObj[QStringLiteral("v")]    = 3;
     rootObj[QStringLiteral("fans")] = fansObj;
     rootObj[QStringLiteral("hidden")] = QJsonArray::fromStringList(m_hiddenIds);
     rootObj[QStringLiteral("pumpTach")] = QJsonArray::fromStringList(m_pumpTachIds);
-    QJsonObject calibObj;   // table (duty, rpm) par canal (bouton Calibrate fans)
+    QJsonObject calibObj;
     for (auto it = m_calibTables.constBegin(); it != m_calibTables.constEnd(); ++it)
         calibObj[it.key()] = pointsToJson(it.value());
     rootObj[QStringLiteral("calib")] = calibObj;
@@ -1823,14 +1656,8 @@ void PumpWidget::loadConfig()
         return;
     const QJsonObject rootObj = doc.object();
 
-    // v1 : Normal présent (pompe 0..3, ventilos 0..4 avec Auto) ;
-    // v2 : Normal retiré (pompe 0..2, ventilos 0..3 avec Auto) ;
-    // v3 : Auto retiré, Fixed inséré (tous : Silent/Perf/Fixed/Custom).
     const int ver = rootObj[QStringLiteral("v")].toInt(1);
 
-    // Canaux masqués par l'utilisateur (bouton ✕ par ventilo). Rétro-compat :
-    // l'ancienne clé "dead" (headers auto-détectés vides) est reprise comme
-    // masquage manuel — ces prises restaient cachées, on préserve le choix.
     for (const auto& v : rootObj[QStringLiteral("hidden")].toArray()) {
         const QString id = v.toString();
         if (!id.isEmpty() && !m_hiddenIds.contains(id)) m_hiddenIds.append(id);
@@ -1839,13 +1666,10 @@ void PumpWidget::loadConfig()
         const QString id = v.toString();
         if (!id.isEmpty() && !m_hiddenIds.contains(id)) m_hiddenIds.append(id);
     }
-    // Headers identifiés comme tach de la pompe (masqués au démarrage)
     for (const auto& v : rootObj[QStringLiteral("pumpTach")].toArray()) {
         const QString id = v.toString();
         if (!id.isEmpty()) m_pumpTachIds.append(id);
     }
-    // Tables de calibration (bouton Calibrate fans) — base du % réel affiché.
-    // Rétro-compat : ancien format = un seul entier (RPM max) -> table 2 points.
     const QJsonObject calibObj = rootObj[QStringLiteral("calib")].toObject();
     for (auto it = calibObj.constBegin(); it != calibObj.constEnd(); ++it) {
         if (it.value().isArray()) {
@@ -1866,12 +1690,10 @@ void PumpWidget::loadConfig()
         const bool isPump = (it.key() == KRAKEN_PUMP_ID);
         int m = o[QStringLiteral("mode")].toInt(int(FanSilent));
         if (ver < 2) {
-            // Silent/Normal -> Silent ; les index suivants reculent d'un cran
             if (isPump) m = (m <= 1) ? 0 : m - 1;
             else        m = (m <= 1) ? m : (m == 2 ? 1 : std::min(m - 1, 3));
         }
         if (ver < 3) {
-            // Auto -> Silent (ventilos, index -1) ; Custom décalé par Fixed
             if (isPump) m = (m >= 2) ? 3 : m;
             else        m = (m <= 1) ? 0 : (m == 2 ? 1 : 3);
         }
@@ -1884,7 +1706,6 @@ void PumpWidget::loadConfig()
             cfg.riseRate = std::clamp(o[QStringLiteral("rise")].toInt(5), 1, 100);
             cfg.fallRate = std::clamp(o[QStringLiteral("fall")].toInt(5), 1, 100);
         } else if (o.contains(QStringLiteral("fall"))) {
-            // Migration v1 : ancien "fall" en secondes (temps 100 -> 0 %)
             const int sec = o[QStringLiteral("fall")].toInt(30);
             cfg.fallRate  = (sec <= 0) ? 100
                           : std::clamp(int(std::lround(100.0 / sec)), 1, 100);
@@ -1897,11 +1718,10 @@ void PumpWidget::loadConfig()
         m_fanCfgs.insert(it.key(), cfg);
     }
 
-    // Migration : très ancien format avec la pompe à la racine ("mode"/"curve")
     if (!m_fanCfgs.contains(KRAKEN_PUMP_ID) && rootObj.contains(QStringLiteral("mode"))) {
         FanChannelConfig cfg;
         int m = rootObj[QStringLiteral("mode")].toInt(0);
-        m = (m <= 1) ? 0 : (m == 2 ? 1 : 3);   // v1 pompe -> v3
+        m = (m <= 1) ? 0 : (m == 2 ? 1 : 3);
         cfg.mode     = m;
         cfg.sourceId = QStringLiteral("liquid");
         cfg.points   = pointsFromJson(rootObj[QStringLiteral("curve")].toArray());
@@ -1911,4 +1731,4 @@ void PumpWidget::loadConfig()
     }
 }
 
-} // namespace NZXTKrakenPump
+}

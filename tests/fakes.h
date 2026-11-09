@@ -1,6 +1,4 @@
 #pragma once
-// État des doublures (fakes) de KrakenPumpDevice et LhwmFans, liées à la place
-// des vraies implémentations : PumpWorker est testé sans HID ni LibreHardwareMonitor.
 #include <QMap>
 #include <QStringList>
 #include <QVector>
@@ -12,20 +10,20 @@ namespace fake {
 
 struct Device {
     bool present = true;           // anySupportedPresent()
-    bool openOk  = true;           // open()
+    bool openOk  = true;
     bool isOpen  = false;
     bool readOk  = true;           // readStatus()
     NZXTKrakenPump::PumpReadings readings;
-    int  pid     = 0x300E;         // Kraken 2023 : canal fan + nouveau protocole
-    QVector<std::array<uint8_t, 60>> pumpCurves, fanCurves;   // setCurve() reçus
+    int  pid     = 0x300E;
+    QVector<std::array<uint8_t, 60>> pumpCurves, fanCurves;
 };
 
 struct Lhwm {
     struct Ch { QString id, rpmId, name, hw; };
     QVector<Ch>            channels;
     QStringList            tempIds, tempNames;
-    QMap<QString, float>   values;          // value(id)
-    int                    failSetDuty = 0; // nb d'échecs à simuler pour setDuty
+    QMap<QString, float>   values;
+    int                    failSetDuty = 0;
     QVector<QPair<QString, int>> setDutyCalls;
     QStringList            setDefaultCalls;
 };

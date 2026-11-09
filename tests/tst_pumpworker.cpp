@@ -1,5 +1,3 @@
-// Tests de la boucle de régulation PumpWorker, sans matériel : KrakenPumpDevice
-// et LhwmFans sont remplacés par les doublures de fakes.cpp.
 #include <QtTest>
 #include "fakes.h"
 #include "ui/PumpWorker.h"
@@ -63,7 +61,7 @@ private slots:
         w.setFanConfig(kFan1, curve(kCpu, { {0, 20}, {40, 20}, {41, 100}, {100, 100} }, 5, 5));
         tick(w);
         QCOMPARE(lastDutyFor(kFan1), 20);
-        fake::lhwm.values[kCpu] = 90.f;   // EMA 30 -> 54 °C : courbe = 100 %, rampe = +5
+        fake::lhwm.values[kCpu] = 90.f;
         tick(w);
         QCOMPARE(lastDutyFor(kFan1), 25);
     }
@@ -76,30 +74,30 @@ private slots:
         tick(w);
         QCOMPARE(fake::dev.pumpCurves.size(), 1);
         const auto& t = fake::dev.pumpCurves.first();
-        QCOMPARE(int(t[0]), 20);    // plancher sécurité pompe
+        QCOMPARE(int(t[0]), 20);
         QCOMPARE(int(t[49]), 20);
-        QCOMPARE(int(t[50]), 100);  // garde firmware liquide >= 50 °C
+        QCOMPARE(int(t[50]), 100);
         QCOMPARE(int(t[59]), 100);
     }
 
     void hotLiquidDoesNotForceRewriteEveryTick()
     {
         fake::dev.readings.liquidTemp = 55.f;
-        fake::dev.readings.pumpDuty   = 100;   // firmware applique la garde
+        fake::dev.readings.pumpDuty   = 100;
         KrakenPumpDevice d; PumpWorker w(&d); w.start();
         w.setFanConfig(KRAKEN_PUMP_ID, curve(QStringLiteral("liquid"), { {20, 30}, {60, 30} }));
         tick(w, 4);
         QCOMPARE(fake::dev.pumpCurves.size(), 1);
     }
 
-    void reportedDutyDriftStillForcesRewrite()   // quirk Elite V2 (non-régression)
+    void reportedDutyDriftStillForcesRewrite()
     {
         fake::dev.readings.pumpDuty = 30;
         KrakenPumpDevice d; PumpWorker w(&d); w.start();
         w.setFanConfig(KRAKEN_PUMP_ID, curve(QStringLiteral("liquid"), { {20, 30}, {60, 30} }));
         tick(w, 2);
         QCOMPARE(fake::dev.pumpCurves.size(), 1);
-        fake::dev.readings.pumpDuty = 0;      // le device s'est remis seul à 0 %
+        fake::dev.readings.pumpDuty = 0;
         tick(w);
         QCOMPARE(fake::dev.pumpCurves.size(), 2);
     }
@@ -110,7 +108,7 @@ private slots:
         KrakenPumpDevice d; PumpWorker w(&d); w.start();
         w.setFanConfig(kFan1, curve(kCpu, { {0, 40}, {100, 40} }));
         tick(w, 3);
-        QCOMPARE(fake::lhwm.setDutyCalls.size(), 2);   // échec, nouvel essai, puis stable
+        QCOMPARE(fake::lhwm.setDutyCalls.size(), 2);
         QCOMPARE(lastDutyFor(kFan1), 40);
     }
 
@@ -120,7 +118,7 @@ private slots:
         QSignalSpy faults(&w, &PumpWorker::fanSensorFault);
         w.setFanConfig(kFan1, curve(kCpu, { {0, 40}, {100, 40} }));
         tick(w);
-        fake::lhwm.values[kCpu] = 0.f;   // sonde morte
+        fake::lhwm.values[kCpu] = 0.f;
         tick(w, 7);
         QVERIFY(fake::lhwm.setDefaultCalls.isEmpty());
         tick(w);
@@ -135,7 +133,7 @@ private slots:
         w.setFanConfig(kFan1, curve(QStringLiteral("liquid"), { {0, 40}, {100, 40} }));
         tick(w);
         QCOMPARE(lastDutyFor(kFan1), 40);
-        fake::dev.readOk  = false;   // Kraken débranché
+        fake::dev.readOk  = false;
         fake::dev.present = false;
         tick(w, 12);
         QCOMPARE(fake::lhwm.setDefaultCalls, QStringList{ kFan1 });

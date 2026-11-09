@@ -1,5 +1,3 @@
-// NvmlFan contre une fausse nvml.dll : énumération, clamp au minimum, plancher
-// thermique, politique manuelle -> auto à setDefault/shutdown.
 #include <QtTest>
 #include <windows.h>
 #include <QTemporaryDir>
@@ -10,7 +8,7 @@ using namespace NZXTKrakenPump;
 
 class TestNvmlFan : public QObject {
     Q_OBJECT
-    HMODULE m_mod = nullptr;   // garde la fausse DLL chargée (état lisible après shutdown)
+    HMODULE m_mod = nullptr;
     QTemporaryDir m_dir;
     template <class F> F fn(const char* n) { return reinterpret_cast<F>(GetProcAddress(m_mod, n)); }
     void temp(unsigned t) { fn<void (*)(unsigned)>("fake_set_temp")(t); }
@@ -23,7 +21,7 @@ private slots:
         m_mod = LoadLibraryA(NVML_TEST_DLL_PATH);
         QVERIFY(m_mod);
         QVERIFY(m_dir.isValid());
-        setGpuFanStateDir(m_dir.path());          // marqueurs de récupération dans un dossier jetable
+        setGpuFanStateDir(m_dir.path());
     }
     void init() { temp(40); QFile::remove(gpuFanStatePath(QStringLiteral("nvml_recovery"))); }
 
@@ -31,27 +29,27 @@ private slots:
     {
         QCOMPARE(nvmlFloorLevel(70, 0), 0);
         QCOMPARE(nvmlFloorLevel(75, 0), 60);
-        QCOMPARE(nvmlFloorLevel(73, 60), 60);     // reste à 60 % jusqu'à 72 °C
+        QCOMPARE(nvmlFloorLevel(73, 60), 60);
         QCOMPARE(nvmlFloorLevel(71, 60), 0);
         QCOMPARE(nvmlFloorLevel(85, 0), 100);
-        QCOMPARE(nvmlFloorLevel(83, 100), 100);   // reste à 100 % jusqu'à 82 °C
+        QCOMPARE(nvmlFloorLevel(83, 100), 100);
         QCOMPARE(nvmlFloorLevel(80, 100), 60);
         QCOMPARE(nvmlFloorLevel(60, 100), 0);
     }
     void guardActsWithoutNewDutyRequest()
     {
         NvmlFan f; QVERIFY(f.init());
-        QVERIFY(f.setDuty(QStringLiteral("nvml/0/control"), 40));   // courbe : 40 %
+        QVERIFY(f.setDuty(QStringLiteral("nvml/0/control"), 40));
         QCOMPARE(pct(0), 40u);
-        temp(90);                                                   // la GPU chauffe, la courbe ne bouge pas
-        f.value(QStringLiteral("nvml/0/fan"));                      // lecture 1 Hz du worker = garde
+        temp(90);
+        f.value(QStringLiteral("nvml/0/fan"));
         QCOMPARE(pct(0), 100u); QCOMPARE(pct(1), 100u);
         temp(78);
         f.value(QStringLiteral("nvml/0/fan"));
-        QCOMPARE(pct(0), 60u);                                      // palier 60 % (hystérésis)
+        QCOMPARE(pct(0), 60u);
         temp(60);
         f.value(QStringLiteral("nvml/0/fan"));
-        QCOMPARE(pct(0), 40u);                                      // refroidie : retour à la courbe
+        QCOMPARE(pct(0), 40u);
         f.setDefault(QStringLiteral("nvml/0/control"));
     }
     void markerExistsWhileManualAndIsRemovedOnDefault()
@@ -66,17 +64,16 @@ private slots:
     }
     void recoversAutomaticPolicyAfterUncleanExit()
     {
-        // « Crash » : l'objet n'est jamais détruit, donc ni setDefault ni shutdown.
         auto* crashed = new NvmlFan;
         QVERIFY(crashed->init());
         QVERIFY(crashed->setDuty(QStringLiteral("nvml/0/control"), 50));
         QCOMPARE(manual(), 1);
 
-        NvmlFan next;                                               // redémarrage d'OpenRGB
+        NvmlFan next;
         QVERIFY(next.init());
-        QCOMPARE(manual(), 0);                                      // politique auto rétablie
+        QCOMPARE(manual(), 0);
         QVERIFY(!QFile::exists(gpuFanStatePath(QStringLiteral("nvml_recovery"))));
-        delete crashed;                                             // nettoyage du test
+        delete crashed;
     }
 
     void enumeratesFakeGpu()
@@ -96,7 +93,7 @@ private slots:
         QVERIFY(f.setDuty(QStringLiteral("nvml/0/control"), 55));
         QCOMPARE(pct(0), 55u); QCOMPARE(pct(1), 55u);
         QCOMPARE(f.value(QStringLiteral("nvml/0/control")), 55.f);
-        QCOMPARE(f.value(QStringLiteral("nvml/0/fan")), 1100.f);   // 55 % * 20 (fausse DLL)
+        QCOMPARE(f.value(QStringLiteral("nvml/0/fan")), 1100.f);
         f.setDefault(QStringLiteral("nvml/0/control"));
     }
     void clampsBelowHardwareMinimum()
@@ -111,13 +108,13 @@ private slots:
         NvmlFan f; QVERIFY(f.init());
         temp(80);
         QVERIFY(f.setDuty(QStringLiteral("nvml/0/control"), 40));
-        QCOMPARE(pct(0), 60u);                                      // >= 75 °C : au moins 60 %
+        QCOMPARE(pct(0), 60u);
         temp(90);
         QVERIFY(f.setDuty(QStringLiteral("nvml/0/control"), 40));
         QCOMPARE(pct(0), 100u);                                     // >= 85 °C : 100 %
         temp(60);
         QVERIFY(f.setDuty(QStringLiteral("nvml/0/control"), 40));
-        QCOMPARE(pct(0), 40u);                                      // froid : la courbe décide
+        QCOMPARE(pct(0), 40u);
         f.setDefault(QStringLiteral("nvml/0/control"));
     }
     void setDefaultRestoresAutomaticPolicy()
@@ -134,13 +131,13 @@ private slots:
             NvmlFan f; QVERIFY(f.init());
             QVERIFY(f.setDuty(QStringLiteral("nvml/0/control"), 50));
             QCOMPARE(manual(), 1);
-        }                                                           // destructeur -> shutdown()
+        }
         QCOMPARE(manual(), 0);
     }
     void untouchedGpuIsNeverWritten()
     {
         NvmlFan f; QVERIFY(f.init());
-        f.setDefault(QStringLiteral("nvml/0/control"));             // jamais piloté : no-op
+        f.setDefault(QStringLiteral("nvml/0/control"));
         QCOMPARE(manual(), 0);
     }
     void unknownIdIsRejected()

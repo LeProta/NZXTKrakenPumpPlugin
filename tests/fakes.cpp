@@ -9,7 +9,6 @@ void reset() { dev = Device(); lhwm = Lhwm(); }
 
 namespace NZXTKrakenPump {
 
-// ── KrakenPumpDevice ─────────────────────────────────────────────────────────
 KrakenPumpDevice::KrakenPumpDevice() {}
 KrakenPumpDevice::~KrakenPumpDevice() {}
 
@@ -45,7 +44,6 @@ bool KrakenPumpDevice::readStatus(PumpReadings& out)
 
 bool KrakenPumpDevice::anySupportedPresent() { return fake::dev.present; }
 
-// ── LhwmFans ─────────────────────────────────────────────────────────────────
 bool LhwmFans::init()
 {
     m_channels.clear();
@@ -71,7 +69,6 @@ bool LhwmFans::setDuty(const QString& id, int percent)
 
 void LhwmFans::setDefault(const QString& id) { fake::lhwm.setDefaultCalls.append(id); }
 
-// ── AdlxFan (GPU AMD) : sans matériel, aucun canal ───────────────────────────
 struct AdlxFan::Impl {};
 AdlxFan::AdlxFan() : m_d(new Impl) {}
 AdlxFan::~AdlxFan() {}
@@ -81,7 +78,6 @@ float AdlxFan::value(const QString&) const { return 0.f; }
 bool  AdlxFan::setDuty(const QString&, int) { return false; }
 void  AdlxFan::setDefault(const QString&) {}
 
-// ── NvmlFan (GPU NVIDIA) : sans matériel, aucun canal ─────────────────────────
 struct NvmlFan::Impl {};
 NvmlFan::NvmlFan() : m_d(new Impl) {}
 NvmlFan::~NvmlFan() {}
@@ -91,4 +87,4 @@ float NvmlFan::value(const QString&) const { return 0.f; }
 bool  NvmlFan::setDuty(const QString&, int) { return false; }
 void  NvmlFan::setDefault(const QString&) {}
 
-} // namespace NZXTKrakenPump
+}

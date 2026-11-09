@@ -1,4 +1,3 @@
-// Fausse nvml.dll pour tester NvmlFan sans GPU NVIDIA (1 GPU, 2 ventilateurs).
 #include <windows.h>
 #include <cstring>
 
@@ -23,7 +22,6 @@ __declspec(dllexport) R nvmlDeviceGetMinMaxFanSpeed(void*, unsigned* mn, unsigne
 __declspec(dllexport) R nvmlDeviceGetTemperature(void*, unsigned, unsigned* t) { *t = g_temp; return 0; }
 __declspec(dllexport) R nvmlDeviceGetFanSpeedRPM(void*, Info* i) { if (i->fan > 1) return 2; i->speed = g_pct[i->fan] * 20; return 0; }
 
-// Pilotage / inspection depuis le test
 __declspec(dllexport) void     fake_set_temp(unsigned t) { g_temp = t; }
 __declspec(dllexport) unsigned fake_pct(unsigned f)      { return g_pct[f]; }
 __declspec(dllexport) int      fake_manual()             { return g_manual ? 1 : 0; }

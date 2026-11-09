@@ -10,18 +10,9 @@
 
 namespace NZXTKrakenPump {
 
-// --- Epinglage des UMD graphiques (identique au plugin LCD) -----------------
-//   LHM (AmdGpu/ADL, compteurs PDH "GPU Engine") charge le user-mode driver du
-//   pilote puis le laisse se decharger ; le poll suivant rappelle dedans ->
-//   0xC0000005 dans "<UMD>.DLL_unloaded" (cf. AMDXN64.DLL). GET_MODULE_HANDLE_EX_FLAG_PIN
-//   incremente definitivement le refcount : le module ne sera plus libere.
-//   Idempotent, sans effet si le module n'est pas (encore) charge, d'ou l'appel
-//   a chaque lecture tant qu'il en reste a epingler.
 #ifdef _WIN32
 static void pinGpuDriverModules()
 {
-    // ponytail: liste fixe des UMD connus ; ajouter le nom du module si un
-    // autre pilote presente le meme crash "*_unloaded".
     static const wchar_t* kModules[] = {
         L"amdxn64.dll", L"amdxx64.dll", L"atiadlxx.dll", L"aticfx64.dll",
         L"nvoglv64.dll", L"nvapi64.dll", L"igd10iumd64.dll",
@@ -33,7 +24,7 @@ static void pinGpuDriverModules()
         if (pinned[i]) continue;
         HMODULE h = nullptr;
         if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN, kModules[i], &h))
-            pinned[i] = true;   // charge et desormais epingle
+            pinned[i] = true;
     }
 }
 #else
@@ -42,8 +33,6 @@ static void pinGpuDriverModules() {}
 
 bool LhwmFans::init()
 {
-    // LHM (cartes mères) puis ADLX (GPU AMD) : indépendants, l'un peut manquer.
-    // ADLX est ajouté APRÈS : initLhwm() repart d'une liste de canaux vide.
     m_channels.clear();
     const bool lhwmOk = initLhwm();
     m_lhwmChannels = m_channels.size();
@@ -58,9 +47,6 @@ bool LhwmFans::init()
 
 bool LhwmFans::initLhwm()
 {
-    // Même garde que le plugin LCD : la lib statique C++/CLI charge l'assembly
-    // .NET au premier appel — s'il est absent le process crashe. On vérifie
-    // donc la présence du fichier avant tout appel LHWM::.
     const QString dll = QCoreApplication::applicationDirPath()
                         + QStringLiteral("/lhwm-wrapper.dll");
     if (!QFileInfo::exists(dll)) {
@@ -70,9 +56,6 @@ bool LhwmFans::initLhwm()
         return false;
     }
 
-    // Ré-appelable : au boot le driver kernel LHM peut ne pas être encore prêt
-    // (GetHardwareSensorMap renvoie 0 Control) — le worker relance init() ;
-    // on repart donc d'une énumération propre.
     m_channels.clear();
     m_temps.clear();
     m_ready = false;
@@ -90,13 +73,10 @@ bool LhwmFans::initLhwm()
     struct RawSensor { QString name, type, id, hw; };
     QVector<RawSensor> all;
     for (const auto& hw : map) {
-        // Clé hardware "Nom : /identifiant" (cf. LHWM.cs) -> ne garder que le nom
         QString hwName = QString::fromStdString(hw.first);
         const int sep = hwName.indexOf(QStringLiteral(" : "));
         if (sep > 0) hwName = hwName.left(sep);
         for (const auto& s : hw.second) {
-            // Dump diagnostic de TOUS les capteurs (niveau Info) — parité avec le
-            // plugin LCD : sert à valider/affiner le mapping ventilos/sondes.
             qInfo().noquote()
                 << "[KrakenPump/Sensors] LHM" << QString::fromStdString(hw.first)
                 << "|"  << QString::fromStdString(std::get<1>(s))
@@ -116,21 +96,15 @@ bool LhwmFans::initLhwm()
         return false;
     }
 
-    // Canaux pilotables : sensors "Control". RPM associé = même index
-    // ("/control/N" -> "/fan/N" sur le même hardware).
     for (const auto& s : all) {
         if (s.type != QLatin1String("Control"))
             continue;
-        // GPU exclu : sur les GPU AMD récents (RDNA3/4) LHM passe par ADL qui
-        // renvoie ADL_ERR_NOT_SUPPORTED — l'écriture est un no-op silencieux.
         if (s.id.startsWith(QStringLiteral("/gpu")))
             continue;
         LhwmChannel ch;
         ch.id   = s.id;
         ch.name = s.name;
         ch.hw   = s.hw;
-        // Nom court : "Nuvoton NCT6799D Fan #1" -> "Fan #1" (le chip Super I/O
-        // n'apporte rien à l'utilisateur, le hardware parent est dans ch.hw)
         const int fanPos = ch.name.indexOf(QStringLiteral("Fan"));
         if (fanPos > 0)
             ch.name = ch.name.mid(fanPos);
@@ -144,8 +118,6 @@ bool LhwmFans::initLhwm()
         m_channels.append(ch);
     }
 
-    // Sources de température pour les courbes : liste curée à noms simples.
-    // On sélectionne la meilleure sonde LHM disponible pour chaque entrée.
     const auto findTemp = [&all](auto pred) -> QString {
         for (const auto& s : all)
             if (s.type == QLatin1String("Temperature") && pred(s))
@@ -165,14 +137,11 @@ bool LhwmFans::initLhwm()
         return s.id.startsWith(QStringLiteral("/gpu"));
     };
 
-    // GPU : "GPU Core" = moyenne, "GPU Hot Spot" = point chaud
     add(QStringLiteral("GPU Average"), findTemp([&](const RawSensor& s) {
         return isGpu(s) && s.name == QLatin1String("GPU Core"); }));
     add(QStringLiteral("GPU Hot Spot"), findTemp([&](const RawSensor& s) {
         return isGpu(s) && s.name.contains(QStringLiteral("Hot Spot")); }));
 
-    // CPU : AMD -> CCD (Tdie) = moyenne, Tctl = point chaud ;
-    //       Intel -> Package = moyenne, Core Max = point chaud.
     QString cpuAvg = findTemp([&](const RawSensor& s) {
         return isCpu(s) && s.name.contains(QStringLiteral("CCD")); });
     if (cpuAvg.isEmpty())
@@ -188,11 +157,9 @@ bool LhwmFans::initLhwm()
     add(QStringLiteral("CPU Average"), cpuAvg);
     add(QStringLiteral("CPU Hot Spot"), cpuHot);
 
-    // RAM (rare : nécessite des DIMMs avec sonde exposée par LHM)
     add(QStringLiteral("RAM"), findTemp([](const RawSensor& s) {
         return s.id.startsWith(QStringLiteral("/ram")); }));
 
-    // Carte mère : sonde du Super I/O ("System" de préférence)
     QString mb = findTemp([](const RawSensor& s) {
         return s.id.contains(QStringLiteral("/lpc/"))
             && s.name.contains(QStringLiteral("System")); });
@@ -210,9 +177,6 @@ bool LhwmFans::initLhwm()
     return true;
 }
 
-// try/catch systématique (parité pollOnce du plugin LCD) : un id invalidé à
-// chaud (maj de driver en cours de session) lève une exception .NET qui
-// tuerait le thread worker.
 float LhwmFans::value(const QString& id) const
 {
     if (AdlxFan::owns(id)) return m_adlx.value(id);
@@ -246,4 +210,4 @@ void LhwmFans::setDefault(const QString& id)
     catch (...) {}
 }
 
-} // namespace NZXTKrakenPump
+}
