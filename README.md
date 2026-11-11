@@ -9,6 +9,13 @@ Controls the pump and fans of NZXT Kraken coolers from OpenRGB, without NZXT CAM
 
 Requires OpenRGB 1.1. If you are still on OpenRGB 1.0rc3, use [v1.0.8](https://github.com/LeProta/NZXTKrakenPumpPlugin/releases/tag/v1.0.8).
 
+## Versions
+
+| Plugin | OpenRGB | lhwm-wrapper |
+|--------|---------|--------------|
+| 1.1.0 | 1.1 | 1.1.0 or later, 1.2.0 recommended |
+| 1.0.8 | 1.0rc3 | 1.1.0 or later |
+
 ## Features
 
 What it controls:
@@ -56,7 +63,7 @@ All of them use vendor ID `0x1E71`. Development and testing are done on a Kraken
 ## Installation
 
 1. Download `NZXTKrakenPumpPlugin.dll` from the [releases page](https://github.com/LeProta/NZXTKrakenPumpPlugin/releases).
-2. Download `lhwm-wrapper.dll` from [LeProta/lhwm-wrapper](https://github.com/LeProta/lhwm-wrapper/releases) and put it next to `OpenRGB.exe`. The plugin reads the motherboard and CPU sensors through it. The older copy that ships with the OpenRGB Hardware Sync plugin does not expose motherboard fans, so use this one. The [LCD plugin](https://github.com/LeProta/NZXTKrakenLCDPlugin) uses the same file.
+2. Download `lhwm-wrapper.dll` (v1.2.0 recommended) from [LeProta/lhwm-wrapper](https://github.com/LeProta/lhwm-wrapper/releases) and put it next to `OpenRGB.exe`. The plugin reads the motherboard and CPU sensors through it. The older copy that ships with the OpenRGB Hardware Sync plugin does not expose motherboard fans, so use this one. The [LCD plugin](https://github.com/LeProta/NZXTKrakenLCDPlugin) uses the same file.
 3. Install [PawnIO](https://pawnio.eu) 2.1.0 or newer. LibreHardwareMonitor uses this driver to talk to the hardware: without it there are no motherboard fans and no CPU temperature.
 4. In OpenRGB, go to Settings > Plugins > Install plugin and pick the DLL, or copy it to `%APPDATA%\OpenRGB\plugins`. Restart OpenRGB and a "NZXT Kraken Pump" tab shows up.
 5. Run OpenRGB as administrator. The plugin needs it for motherboard fans, CPU temperatures and NVIDIA.
