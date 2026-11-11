@@ -1464,7 +1464,7 @@ void PumpWidget::showApplyPopover(ChannelPanel* src, QPushButton* anchor)
     }
     listLay->addStretch();
     scroll->setWidget(listBody);
-    scroll->setFixedHeight(std::min(160, targets.size() * 26 + 8));
+    scroll->setFixedHeight(std::min<int>(160, targets.size() * 26 + 8));
     lay->addWidget(scroll);
 
     auto* btnRow = new QHBoxLayout();

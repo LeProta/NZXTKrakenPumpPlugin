@@ -209,12 +209,15 @@ bool KrakenPumpDevice::readStatus(PumpReadings& out)
     if (!isOpen()) return false;
     QMutexLocker lock(&m_cmdMutex);
 
+    const int maxBuf = hidReportLen() + 1;
+    std::vector<uint8_t> buf(maxBuf, 0);
+
+    // Drop queued 0x75 reports (periodic pushes, the LCD plugin's replies) so we read a fresh one.
+    for (int i = 0; i < 64 && readHIDResponse(buf.data(), buf.size(), 1); ++i) {}
+
     const uint8_t req[2] = { 0x74, 0x01 };
     if (!sendHIDCommand(req, sizeof(req)))
         return false;
-
-    const int maxBuf = hidReportLen() + 1;
-    std::vector<uint8_t> buf(maxBuf, 0);
 
     QElapsedTimer deadline;
     deadline.start();

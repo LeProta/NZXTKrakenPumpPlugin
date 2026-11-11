@@ -85,9 +85,9 @@ NVIDIA (NVML):
 You need:
 
 - Visual Studio Build Tools 2019 or 2022 with the C++ desktop workload
-- Qt 5.15.2 (`msvc2019_64`)
+- Qt 6.8.3 (`msvc2022_64`), for OpenRGB 1.1 (plugin API 5)
 - CMake 3.16 or newer (the one that comes with Visual Studio is fine)
-- hidapi, for example `vcpkg install hidapi:x64-windows`
+- hidapi: the bundled `third_party/hidapi/lib/hidapi.lib` imports OpenRGB 1.1's own `hidapi-hotplug.dll` (regenerate with `lib /def:hidapi.def /machine:x64`)
 - [lhwm-wrapper](https://github.com/LeProta/lhwm-wrapper) cloned next to this repository
 - the AMD ADLX SDK, see below
 
@@ -101,7 +101,7 @@ git clone https://github.com/LeProta/NZXTKrakenPumpPlugin
 cd NZXTKrakenPumpPlugin
 
 cmake -S . -B build -G "NMake Makefiles" ^
-  -DCMAKE_PREFIX_PATH=C:/Qt/5.15.2/msvc2019_64 ^
+  -DCMAKE_PREFIX_PATH=C:/Qt/6.8.3/msvc2022_64 ^
   -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake
 
 cmake --build build
@@ -116,9 +116,9 @@ If you do not use vcpkg, pass `-DHIDAPI_ROOT=<folder>` instead of the toolchain 
 The tests do not need any hardware.
 
 ```bat
-cmake -S tests -B build-tests -G "NMake Makefiles" -DCMAKE_PREFIX_PATH=C:/Qt/5.15.2/msvc2019_64
+cmake -S tests -B build-tests -G "NMake Makefiles" -DCMAKE_PREFIX_PATH=C:/Qt/6.8.3/msvc2022_64
 cmake --build build-tests
-set PATH=C:\Qt\5.15.2\msvc2019_64\bin;%PATH%
+set PATH=C:\Qt\6.8.3\msvc2022_64\bin;%PATH%
 build-tests\tst_pumpworker.exe
 build-tests\tst_nvmlfan.exe
 build-tests\tst_gpufan.exe
@@ -160,4 +160,4 @@ Logs go next to the OpenRGB logs, in `NZXTKrakenPump_<timestamp>.log`. You have 
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Qt, hidapi, LibreHardwareMonitor and the AMD ADLX SDK keep their own licenses.
+MIT, see [LICENSE](LICENSE). Qt, hidapi, LibreHardwareMonitor and the AMD ADLX SDK keep their own licenses. The OpenRGB 1.1 plugin API headers in `third_party/openrgb` are GPL-2.0-or-later (see `third_party/openrgb/LICENSE`); `nlohmann/json.hpp` is MIT.

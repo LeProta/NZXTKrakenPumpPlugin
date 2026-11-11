@@ -36,19 +36,11 @@ bool             g_pinnedInChain  = false;
 bool             g_fileEnabled    = true;
 bool             g_consoleEnabled = false;
 int              g_logLevel       = KL_INFO;
-int              g_fileCountLimit = 0;
+int              g_fileCountLimit = 10;   // OpenRGB 1.1 LogManager default
 
-void loadOpenRGBLogSettings(const QString& cfgDir)
+void loadOpenRGBLogSettings()
 {
-    QFile f(cfgDir + QStringLiteral("/OpenRGB.json"));
-    if (!f.open(QIODevice::ReadOnly))
-        return;
-
-    const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
-    if (!doc.isObject())
-        return;
-
-    const QJsonObject lm = doc.object().value(QStringLiteral("LogManager")).toObject();
+    const QJsonObject lm = NZXTKrakenPump::OpenRGBSettings::section(QStringLiteral("LogManager"));
     if (lm.contains(QStringLiteral("log_file")))
         g_fileEnabled = lm.value(QStringLiteral("log_file")).toBool(g_fileEnabled);
     if (lm.contains(QStringLiteral("log_console")))
@@ -155,7 +147,7 @@ void installKrakenPumpLogger(const QString& hidVer)
     g_clock.start();
 
     const QString cfgDir = NZXTKrakenPump::OpenRGBSettings::configDir();
-    loadOpenRGBLogSettings(cfgDir);
+    loadOpenRGBLogSettings();
 
     const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss"));
 
@@ -228,6 +220,7 @@ OpenRGBPluginInfo NZXTKrakenPumpPlugin::GetPluginInfo()
     info.Location    = OPENRGB_PLUGIN_LOCATION_TOP;
     info.Label       = "NZXT Kraken Pump";
     info.TabIconString = "";
+    info.ProtocolVersion = 0;   // no SDK commands
 
     QImage icon(64, 64, QImage::Format_ARGB32);
     icon.fill(Qt::black);
@@ -251,14 +244,15 @@ OpenRGBPluginInfo NZXTKrakenPumpPlugin::GetPluginInfo()
 
 unsigned int NZXTKrakenPumpPlugin::GetPluginAPIVersion()
 {
-    return OPENRGB_PLUGIN_API_VERSION;  // 4
+    return OPENRGB_PLUGIN_API_VERSION;
 }
 
-void NZXTKrakenPumpPlugin::Load(ResourceManagerInterface* /*rm*/)
+void NZXTKrakenPumpPlugin::Load(OpenRGBPluginAPIInterface* api)
 {
     const struct hid_api_version* v = hid_version();
     const QString hidVer = v ? QString("%1.%2.%3").arg(v->major).arg(v->minor).arg(v->patch)
                              : QStringLiteral("(unknown)");
+    NZXTKrakenPump::OpenRGBSettings::init(api);
     installKrakenPumpLogger(hidVer);
 
     qInfo() << "[KrakenPump/Core] Plugin loaded.";
@@ -301,6 +295,11 @@ QWidget* NZXTKrakenPumpPlugin::GetWidget()
 QMenu* NZXTKrakenPumpPlugin::GetTrayMenu()
 {
     return nullptr;
+}
+
+void NZXTKrakenPumpPlugin::SettingsManagerUpdated(unsigned int)
+{
+    NZXTKrakenPump::OpenRGBSettings::refresh();
 }
 
 void NZXTKrakenPumpPlugin::Unload()
