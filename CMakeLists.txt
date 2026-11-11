@@ -25,8 +25,11 @@ foreach(_dep hidapi)
     endif()
 endforeach()
 
-find_path(HIDAPI_INCLUDE_DIR hidapi/hidapi.h HINTS ${HIDAPI_ROOT} PATH_SUFFIXES include)
-find_library(HIDAPI_LIBRARY NAMES hidapi HINTS ${HIDAPI_ROOT} PATH_SUFFIXES lib)
+# HINTS before vcpkg/CMAKE_PREFIX_PATH: a vcpkg hidapi links hidapi.dll, which OpenRGB 1.1 does not ship.
+find_path(HIDAPI_INCLUDE_DIR hidapi/hidapi.h HINTS ${HIDAPI_ROOT} PATH_SUFFIXES include
+          NO_CMAKE_PATH NO_CMAKE_ENVIRONMENT_PATH)
+find_library(HIDAPI_LIBRARY NAMES hidapi HINTS ${HIDAPI_ROOT} PATH_SUFFIXES lib
+             NO_CMAKE_PATH NO_CMAKE_ENVIRONMENT_PATH)
 if(NOT HIDAPI_INCLUDE_DIR OR NOT HIDAPI_LIBRARY)
     message(FATAL_ERROR "hidapi not found: pass -DHIDAPI_ROOT=... or the vcpkg toolchain.")
 endif()
